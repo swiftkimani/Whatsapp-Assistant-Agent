@@ -19,6 +19,8 @@ import time
 from pathlib import Path
 
 import httpx
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
@@ -40,6 +42,10 @@ SHORT_SESSION_SECONDS = 12 * 3600  # otherwise: ends when the browser closes, or
 LOGIN_WINDOW = 300      # seconds
 LOGIN_MAX_FAILS = 5     # per IP, per window
 MAX_AUDIO_BYTES = 10 * 1024 * 1024
+# How long a location reading from the phone stays usable. Long enough to cover
+# asking for a pin and confirming it, short enough that nobody is sent a place
+# you have already left.
+PHONE_FIX_MAX_AGE = 300  # seconds
 
 _last_send: dict[str, float] = {}
 _failed_logins: dict[str, list[float]] = {}
@@ -65,11 +71,35 @@ def _is_https(request: Request) -> bool:
 
 
 def _password() -> str:
+    """The plaintext password, for a dashboard only reachable over loopback."""
     return os.getenv("DASHBOARD_PASSWORD") or os.getenv("DASHBOARD_TOKEN", "")
 
 
+def _password_hash() -> str:
+    """An argon2id hash of the password. Required once the dashboard is exposed
+    beyond localhost: it is the only form that survives someone reading the
+    environment. Generate one with scripts/hash_password.py."""
+    return os.getenv("DASHBOARD_PASSWORD_HASH", "")
+
+
+def _credential() -> str:
+    """Whichever secret is configured. Sessions are signed with it, so changing
+    the password — in either form — signs everyone out."""
+    return _password_hash() or _password()
+
+
+def _check_password(candidate: str) -> bool:
+    if hash_ := _password_hash():
+        try:
+            return PasswordHasher().verify(hash_, candidate)
+        except (VerifyMismatchError, VerificationError, InvalidHashError):
+            return False
+    expected = _password()
+    return bool(expected) and hmac.compare_digest(candidate.encode(), expected.encode())
+
+
 def _session_key() -> bytes:
-    return hashlib.sha256(b"dashboard-session:" + _password().encode()).digest()
+    return hashlib.sha256(b"dashboard-session:" + _credential().encode()).digest()
 
 
 def _sign(expires: int) -> str:
@@ -91,8 +121,8 @@ def _cookie_valid(value: str) -> bool:
 
 def require_auth(request: Request) -> None:
     """FastAPI dependency: use as dependencies=[Depends(require_auth)]."""
-    if not _password():
-        raise HTTPException(503, "DASHBOARD_PASSWORD is not set in .env.")
+    if not _credential():
+        raise HTTPException(503, "Set DASHBOARD_PASSWORD_HASH or DASHBOARD_PASSWORD in .env.")
     if not _cookie_valid(request.cookies.get(SESSION_COOKIE, "")):
         raise HTTPException(401, "Please sign in.")
 
@@ -104,9 +134,8 @@ class LoginRequest(BaseModel):
 
 @router.post("/api/login")
 def login(body: LoginRequest, request: Request, response: Response):
-    expected = _password()
-    if not expected:
-        raise HTTPException(503, "DASHBOARD_PASSWORD is not set in .env.")
+    if not _credential():
+        raise HTTPException(503, "Set DASHBOARD_PASSWORD_HASH or DASHBOARD_PASSWORD in .env.")
 
     ip, now = _client_ip(request), time.time()
     attempts = [t for t in _failed_logins.get(ip, []) if now - t < LOGIN_WINDOW]
@@ -114,7 +143,7 @@ def login(body: LoginRequest, request: Request, response: Response):
         _failed_logins[ip] = attempts
         raise HTTPException(429, "Too many wrong attempts. Try again in 5 minutes.")
 
-    if not hmac.compare_digest(body.password.encode(), expected.encode()):
+    if not _check_password(body.password):
         attempts.append(now)
         _failed_logins[ip] = attempts
         raise HTTPException(401, "Wrong password.")
@@ -143,10 +172,16 @@ def session():
 # ------------------------------------------------------------ contacts ----
 
 class LocationRequest(BaseModel):
+    # Deliberately only the recipient. The coordinates are not accepted here —
+    # they are read from the fix the phone reported, so a caller holding a
+    # session cookie cannot send someone an arbitrary place as you.
     contact: str = Field(min_length=1, max_length=60)
+
+
+class PhoneFixRequest(BaseModel):
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
-    accuracy: float | None = None
+    accuracy: float | None = Field(default=None, ge=0)
 
 
 class TextRequest(BaseModel):
@@ -156,6 +191,27 @@ class TextRequest(BaseModel):
 
 def _contact_names() -> list[str]:
     return contacts_store.names()
+
+
+def _phone_fix() -> dict | None:
+    """The last location the phone reported, or None when there is no fresh one.
+
+    A stale or unreadable reading is deleted rather than kept, so failing to get
+    a new fix can never quietly fall back to somewhere you used to be.
+    """
+    raw = db.get_setting("phone_location")
+    if not raw:
+        return None
+    try:
+        fix = json.loads(raw)
+        age = time.time() - float(fix["ts"])
+    except (ValueError, TypeError, KeyError):
+        db.set_setting("phone_location", "")
+        return None
+    if age > PHONE_FIX_MAX_AGE:
+        db.set_setting("phone_location", "")
+        return None
+    return fix
 
 
 async def _send(kind: str, path: str, payload: dict, cooldown: float) -> dict:
@@ -204,9 +260,25 @@ async def send_text(body: TextRequest):
     return await _send("text", "/send-text", body.model_dump(), cooldown=3)
 
 
+@router.post("/api/phone-location", dependencies=[Depends(require_auth)])
+async def phone_location(body: PhoneFixRequest):
+    """Record where the phone says it is. The timestamp is set here rather than
+    taken from the caller, so freshness cannot be faked."""
+    db.set_setting("phone_location", json.dumps(
+        {"lat": body.latitude, "lon": body.longitude, "acc": body.accuracy, "ts": time.time()}))
+    log_event("phone_location_updated")  # no coordinates in logs
+    return {"status": "ok"}
+
+
 @router.post("/api/send-location", dependencies=[Depends(require_auth)])
 async def send_location(body: LocationRequest):
-    return await _send("location", "/send-location", body.model_dump(), cooldown=20)
+    fix = _phone_fix()
+    if fix is None:
+        raise HTTPException(409, "No recent location from the phone. Open the dashboard "
+                                 "on your phone and allow location, then try again.")
+    payload = {"contact": body.contact, "latitude": fix["lat"],
+               "longitude": fix["lon"], "accuracy": fix.get("acc")}
+    return await _send("location", "/send-location", payload, cooldown=20)
 
 
 @router.post("/api/transcribe", dependencies=[Depends(require_auth)])

@@ -190,7 +190,7 @@
     <div class="chips">
       <button id="autoBtn" class="chip on" type="button" aria-pressed="true" title="When paused, every reply waits for your approval">Auto-reply: On</button>
       <button id="directBtn" class="chip on" type="button" aria-pressed="true" title="When on, messages you tell me to send go out immediately">Direct send: On</button>
-      <button id="wakeBtn" class="chip off" type="button" aria-pressed="false" title="Say the name to talk hands-free. Uses the browser's speech service (Chrome or Edge) while this page is open.">Say Mika: Off</button>
+      <button id="wakeBtn" class="chip off" type="button" aria-pressed="false" title="Say the name to talk hands-free. Uses the browser's speech service (Chrome or Edge) while this page is open.">Say Arianna: Off</button>
       <button id="voiceBtn" class="chip on" type="button" aria-pressed="true" title="When on, what you dictate is sent right away and I answer out loud">Voice chat: On</button>
       <button id="lockBtn" class="chip plain" type="button">Sign out</button>
     </div>
@@ -538,8 +538,18 @@
   // ---- wake word: say the assistant's name to talk without touching the mic ----
   // Works in Chrome/Edge (their speech service hears the name, so audio goes to that service while it is on).
   // To rename the assistant, change ASSISTANT_NAME and the WAKE list (spellings the recognizer may produce).
-  const ASSISTANT_NAME = "Mika";
-  const WAKE = /(mika|meeka|mica|ميكا|ميكي|ميكى|ميكه|ميكة)/i;
+  const ASSISTANT_NAME = "Arianna";
+  // Full name and the short form she also goes by, longest first so WAKE_LEAD
+  // strips the whole name and not just its first syllable.
+  // Latin forms get ASCII word boundaries. Arabic forms need an explicit
+  // Arabic-letter boundary instead: JS \b is defined on [A-Za-z0-9_], so it
+  // never matches beside an Arabic letter, and without the boundary the short
+  // form collides with ordinary words — "أريد" ("I want") contains "أري".
+  const WAKE_LATIN = "arianna|ariana|aryanna|aryana|ariyanna|ariyana|arie|aree|ari";
+  const WAKE_ARABIC = "أريانا|اريانا|آريانا|أريانة|اريانة|آريه|أريه|آري|أري|اري";
+  const WAKE = new RegExp(
+    "\\b(?:" + WAKE_LATIN + ")\\b"
+    + "|(?<![\\u0600-\\u06FF])(?:" + WAKE_ARABIC + ")(?![\\u0600-\\u06FF])", "i");
   const WAKE_LEAD = new RegExp("^[\\s,،.:!؟?-]*(?:" + WAKE.source + ")[\\s,،.:!؟?-]*", "i");
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const wakeBtn = $("wakeBtn");
@@ -664,9 +674,13 @@
   async function doSend(action) {
     if (action.type === "text") return api("/api/send-text", { contact: action.contact, text: action.text });
     const p = await position();
-    return api("/api/send-location", {
-      contact: action.contact, latitude: p.coords.latitude, longitude: p.coords.longitude, accuracy: p.coords.accuracy,
+    // Two steps on purpose: the reading is handed over on its own, then the
+    // send names only the recipient. The server pins the coordinates, so this
+    // page cannot choose a place to send.
+    await api("/api/phone-location", {
+      latitude: p.coords.latitude, longitude: p.coords.longitude, accuracy: p.coords.accuracy,
     });
+    return api("/api/send-location", { contact: action.contact });
   }
   const failText = (err) => (err.code === 1 ? "Location permission was denied." : err.message);
 
