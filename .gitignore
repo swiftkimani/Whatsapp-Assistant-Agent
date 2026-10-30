@@ -4,8 +4,8 @@ node_modules/
 .wwebjs_auth/
 .wwebjs_cache/
 contacts.json
-data/kb/
-data/assistant.db
-data/style_index/
 raw_exports/
 __pycache__/
+# All of data/: the database, your notes, the style index and the runtime log.
+# It is personal content and this repository is public.
+data/
