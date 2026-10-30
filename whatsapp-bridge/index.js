@@ -154,7 +154,9 @@ client.on("message", async (msg) => {
     }
     const { allowed, number } = await checkAllowed(msg);
     if (!allowed) {
-      console.log(`[BLOCKED - not allowed] ${anon(msg.from)}`);
+      const kind = msg.from.endsWith("@g.us") ? "group"
+        : msg.from.endsWith("@lid") ? "lid" : "direct";
+      console.log(`[BLOCKED - not allowed] ${anon(msg.from)} kind=${kind} resolved=${anon(number)}`);
       return;
     }
     console.log(`[ALLOWED] ${anon(msg.from)} type=${msg.type}`);
