@@ -66,10 +66,28 @@ if (process.env.PUPPETEER_EXECUTABLE_PATH) {
   puppeteerConfig.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
 }
 
+// whatsapp-web.js drives WhatsApp Web's own internal modules, so it pins the
+// exact web build it was written against. That pin goes stale: WhatsApp keeps
+// serving an old build to existing sessions but REFUSES TO LINK A NEW DEVICE
+// on one, which surfaces as "Couldn't link device - try again later" and looks
+// like a scanning problem rather than a version problem.
+//
+// So fetch a current build instead of using the bundled pin. wa-version
+// archives WhatsApp Web's HTML per build; {version} is substituted by the
+// library. Bump WA_WEB_VERSION when linking starts failing again:
+//   https://github.com/wppconnect-team/wa-version/tree/main/html
+const WA_WEB_VERSION = process.env.WA_WEB_VERSION || "2.3000.1047561935-alpha";
+
 const client = new Client({
   authStrategy: new LocalAuth(),
   puppeteer: puppeteerConfig,
+  webVersion: WA_WEB_VERSION,
+  webVersionCache: {
+    type: "remote",
+    remotePath: "https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html",
+  },
 });
+console.log(`Using WhatsApp Web version ${WA_WEB_VERSION}`);
 
 // Linking by pairing code instead of QR. A QR has to be photographed off a
 // screen before it rotates, which is roughly a 20 second window and a losing

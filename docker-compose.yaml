@@ -73,6 +73,9 @@ services:
       CONTACTS_FILE: /app/data/contacts.json
       # Set to link by typed code rather than by scanning a QR off a log viewer.
       PAIRING_NUMBER: ${PAIRING_NUMBER:-}
+      # Bump when linking starts failing: WhatsApp refuses new device links on
+      # a stale web build. See wppconnect-team/wa-version.
+      WA_WEB_VERSION: ${WA_WEB_VERSION:-}
       TZ: ${TZ:-Africa/Nairobi}
     expose:
       - "3001"
