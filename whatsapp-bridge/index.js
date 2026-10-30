@@ -48,8 +48,13 @@ async function checkAllowed(msg) {
   return { allowed: ALLOWED_CONTACTS.includes(number), number };
 }
 
+// Headless on a server, but WhatsApp now asks for a passkey when linking a new
+// companion device, and that ceremony needs a real browser with a real
+// authenticator. Set HEADLESS=false on a laptop to link in a visible window
+// (Touch ID / Windows Hello), then copy .wwebjs_auth to the server: the gate
+// applies only at link time, and an existing session keeps working.
 const puppeteerConfig = {
-  headless: true,
+  headless: process.env.HEADLESS !== "false",
   args: [
     "--no-sandbox",
     "--disable-setuid-sandbox",
