@@ -1,0 +1,85 @@
+# Deployed by Coolify. Two services on a private network: only the backend is
+# ever reachable from outside, and the bridge's send API never leaves it.
+#
+# Required values use Compose's ${VAR:?} form, which Coolify turns into a field
+# that blocks deployment until it is filled. ALLOWED_CONTACTS is deliberately
+# among them: empty means every sender is processed, and that should not be
+# reachable by forgetting to type something.
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      # Coolify routes the domain here and substitutes the hostname.
+      SERVICE_FQDN_BACKEND_8000: /dashboard
+
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5-5}
+      ANTHROPIC_EFFORT: ${ANTHROPIC_EFFORT:-medium}
+      ANTHROPIC_MAX_TOKENS: ${ANTHROPIC_MAX_TOKENS:-4096}
+
+      # argon2id only. The plaintext DASHBOARD_PASSWORD is for a dashboard on
+      # loopback; this one is on the internet.
+      DASHBOARD_PASSWORD_HASH: ${DASHBOARD_PASSWORD_HASH:?}
+
+      # Generated once by Coolify and identical in both services, because the
+      # name matches. Nobody has to invent or copy it.
+      BRIDGE_API_TOKEN: ${SERVICE_PASSWORD_64_BRIDGE}
+      BRIDGE_API_URL: http://bridge:3001
+
+      ALLOWED_CONTACTS: ${ALLOWED_CONTACTS:?}
+      ALLOW_GROUPS: ${ALLOW_GROUPS:-false}
+      CONTACTS_FILE: /app/data/contacts.json
+
+      USER_NAME: ${USER_NAME:-}
+      ASSISTANT_NAME: ${ASSISTANT_NAME:-Arianna}
+      ASSISTANT_NICKNAMES: ${ASSISTANT_NICKNAMES:-Arie}
+      WHISPER_MODEL_SIZE: ${WHISPER_MODEL_SIZE:-small}
+      DASHBOARD_WHISPER_SIZE: ${DASHBOARD_WHISPER_SIZE:-small}
+      TTS_PROVIDER: ${TTS_PROVIDER:-edge}
+      TZ: ${TZ:-Africa/Cairo}
+    volumes:
+      - app-data:/app/data
+      - model-cache:/models
+    networks: [internal]
+
+  bridge:
+    build:
+      context: .
+      dockerfile: whatsapp-bridge/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      BACKEND_URL: http://backend:8000/webhook
+      BRIDGE_API_TOKEN: ${SERVICE_PASSWORD_64_BRIDGE}
+      BRIDGE_API_PORT: 3001
+      # Loopback is the default in code; inside the network the backend is a
+      # different host. The port is never published, and the token still applies.
+      BRIDGE_API_HOST: 0.0.0.0
+      ALLOWED_CONTACTS: ${ALLOWED_CONTACTS:?}
+      ALLOW_GROUPS: ${ALLOW_GROUPS:-false}
+      CONTACTS_FILE: /app/data/contacts.json
+      TZ: ${TZ:-Africa/Cairo}
+    volumes:
+      # Shared with the backend so contacts.json exists once. Both images run as
+      # uid 10001, so the permissions line up.
+      - app-data:/app/data
+      - wa-session:/app/whatsapp-bridge/.wwebjs_auth
+    networks: [internal]
+
+volumes:
+  # The SQLite database, held queue, your notes and contacts.json.
+  app-data:
+  # BLIP's weights. Without this every deploy re-downloads them.
+  model-cache:
+  # Live credentials for the linked WhatsApp account. Losing this means
+  # scanning the QR again; copying it lets someone else use the account.
+  wa-session:
+
+networks:
+  internal:

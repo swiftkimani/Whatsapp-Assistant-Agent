@@ -59,8 +59,9 @@ const puppeteerConfig = {
   ],
 };
 if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-  // Only override if you explicitly set this — otherwise puppeteer uses
-  // its own bundled Chromium, which already downloaded successfully.
+  // Set this to use an already-installed Chrome, and install with
+  // PUPPETEER_SKIP_DOWNLOAD=true. Without it, puppeteer uses the browser it
+  // downloads on install — which needs that download to have succeeded.
   puppeteerConfig.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
 }
 

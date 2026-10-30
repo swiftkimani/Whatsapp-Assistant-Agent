@@ -1,5 +1,5 @@
 // Local API so the Python backend can ask the bridge to send things.
-// Listens on 127.0.0.1 only, needs a secret header, and can only message
+// Binds loopback by default, needs a secret header, and can only message
 // names listed in contacts.json (never a number taken from the request).
 
 const fs = require("fs");
@@ -7,7 +7,10 @@ const http = require("http");
 const path = require("path");
 const { Location } = require("whatsapp-web.js");
 
-const CONTACTS_FILE = path.resolve(__dirname, "..", "contacts.json"); // project root
+// Project root by default; CONTACTS_FILE moves it so the backend and the bridge
+// can share one copy when they run as separate containers.
+const CONTACTS_FILE = process.env.CONTACTS_FILE
+  || path.resolve(__dirname, "..", "contacts.json");
 const ROUTES = ["/send-text", "/send-location", "/send-reply"];
 let started = false; // "ready" can fire again after a reconnect
 
@@ -101,7 +104,12 @@ function startBridgeApi(client) {
     });
   });
 
-  server.listen(port, "127.0.0.1", () => console.log(`Bridge API on 127.0.0.1:${port}`));
+  // Loopback by default, so on a laptop nothing off the machine can reach it.
+  // Under compose the backend is a different host, so BRIDGE_API_HOST is set to
+  // 0.0.0.0 there — the port is never published outside the compose network and
+  // every request still has to carry the shared token.
+  const host = process.env.BRIDGE_API_HOST || "127.0.0.1";
+  server.listen(port, host, () => console.log(`Bridge API on ${host}:${port}`));
 }
 
 module.exports = { startBridgeApi };

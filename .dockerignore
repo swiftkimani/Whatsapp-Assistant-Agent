@@ -1,0 +1,29 @@
+# Keep the build context to source only. Everything excluded here is either
+# rebuilt in the image, supplied as an environment variable, or a volume.
+
+.git/
+.gitignore
+.github/
+
+# Rebuilt inside the image
+venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+node_modules/
+whatsapp-bridge/node_modules/
+
+# Secrets and runtime state: environment variables and volumes instead
+.env
+.env.*
+!.env.example
+data/
+contacts.json
+whatsapp-bridge/.wwebjs_auth/
+whatsapp-bridge/.wwebjs_cache/
+
+# Not needed at runtime
+tests/
+docs/
+scripts/dev.sh
+.DS_Store

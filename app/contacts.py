@@ -1,9 +1,15 @@
-"""contacts.json (project root) maps a name to a phone number or a full chat id."""
+"""contacts.json maps a name to a phone number or a full chat id.
+
+Lives in the project root by default. CONTACTS_FILE moves it, which is how the
+backend and the bridge share one copy when they run as separate containers.
+"""
 import json
+import os
 import re
 from pathlib import Path
 
-CONTACTS_FILE = Path(__file__).resolve().parent.parent / "contacts.json"
+CONTACTS_FILE = Path(os.getenv("CONTACTS_FILE")
+                     or Path(__file__).resolve().parent.parent / "contacts.json")
 
 
 def load() -> dict[str, str]:
