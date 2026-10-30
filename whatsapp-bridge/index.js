@@ -142,7 +142,11 @@ client.on("code", announcePairingCode);
 //   console.log(`WhatsApp bridge is ready. ECHO_ONLY = ${ECHO_ONLY}`);
 // });
 client.on("ready", () => {
-  console.log(`WhatsApp bridge is ready. ECHO_ONLY = ${ECHO_ONLY}`);
+  // Which account is linked decides what counts as "fromMe", so log it — hashed
+  // with the same anon() as everything else, so it can be confirmed by hashing
+  // a candidate number rather than by printing one.
+  const me = client.info && client.info.wid ? client.info.wid._serialized : "";
+  console.log(`WhatsApp bridge is ready. ECHO_ONLY = ${ECHO_ONLY} linked=${anon(me)}`);
   startBridgeApi(client);
 });
 
