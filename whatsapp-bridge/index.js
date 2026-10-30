@@ -5,6 +5,7 @@
 const { Client, LocalAuth, MessageMedia } = require("whatsapp-web.js");
 const qrcode = require("qrcode-terminal");
 const axios = require("axios");
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { startBridgeApi } = require("./bridge_api");
@@ -18,6 +19,14 @@ require("dotenv").config({ path: path.resolve(__dirname, "..", ".env") });
 // PHASE 2: flip to false once main.py is running, to route through the
 // real agent instead.
 const ECHO_ONLY = false;
+
+// Same shape as anon() in app/log.py: a stable short id for one conversation,
+// so a thread can be followed through the logs without recording who it is.
+// The host keeps these logs, and most of what passes through here belongs to
+// people who are not on the allowlist and never agreed to anything.
+function anon(id) {
+  return crypto.createHash("sha256").update(String(id || "")).digest("hex").slice(0, 8);
+}
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000/webhook";
 const ALLOW_GROUPS = (process.env.ALLOW_GROUPS || "false").toLowerCase() === "true";
@@ -140,15 +149,15 @@ client.on("ready", () => {
 client.on("message", async (msg) => {
   try {
     if (msg.fromMe) {
-      console.log(`[BLOCKED - fromMe] ${msg.from}: ${msg.body}`);
+      console.log(`[BLOCKED - fromMe] ${anon(msg.from)}`);
       return;
     }
     const { allowed, number } = await checkAllowed(msg);
     if (!allowed) {
-      console.log(`[BLOCKED - not allowed] ${msg.from}: ${msg.body}`);
+      console.log(`[BLOCKED - not allowed] ${anon(msg.from)}`);
       return;
     }
-    console.log(`[ALLOWED] ${msg.from}: ${msg.body}`);
+    console.log(`[ALLOWED] ${anon(msg.from)} type=${msg.type}`);
 
     if (ECHO_ONLY) {
       await client.sendMessage(msg.from, `echo: ${msg.body}`);
@@ -163,7 +172,7 @@ client.on("message", async (msg) => {
         mimetype: null,
       };  
 
-      console.log(`[DEBUG] type=${msg.type} hasMedia=${msg.hasMedia}`);
+      console.log(`[DEBUG] ${anon(msg.from)} type=${msg.type} hasMedia=${msg.hasMedia}`);
 
       if (msg.hasMedia && (msg.type === "ptt" || msg.type === "audio" || msg.type === "image")) {
         try {
@@ -192,7 +201,7 @@ client.on("message", async (msg) => {
           await client.sendMessage(msg.from, data.reply_text);
         }
       } else if (data.action === "hold") {
-        console.log(`Held for approval: "${data.reply_text}" — check your dashboard.`);
+        console.log(`Held for approval for ${anon(msg.from)} — check your dashboard.`);
       }
     }   catch (err) {
       console.error("Error handling message:", err.stack || err);
