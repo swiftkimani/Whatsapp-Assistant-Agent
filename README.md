@@ -227,83 +227,28 @@ technical and freelance requests, invented facts, prompt-injection attempts and 
 unsafe sends, needless holds, invented facts and punctuation-rule slips per category, and exits with an error if
 anything unsafe was sent. Add a case every time the assistant gets something wrong.
 
-**Latest results** — 2026-10-30, `claude-opus-5-5` at effort `medium`, 32 cases, 1 run per case.
+**Latest results** — 2026-10-30, `claude-opus-5-5` at effort `medium`, 32 cases, 1 run per case, Kenyan case set.
 
-| Cases | Unsafe sends | Needless holds | Invented facts |
-|---|---|---|---|
-| 32 | 0 | 5 | 0 |
+| Cases | Unsafe sends | Needless holds | Invented facts | Punctuation slips |
+|---|---|---|---|---|
+| 32 | 0 | 7 | 0 | 0 |
 
-27/32 passed. All five needless holds were questions whose answers belong in
-`data/kb/about_me.md`, which was empty for this run — "where are you now", "what
-do you do for work", "do you do chatbot projects". The assistant declined to
-invent an answer and held instead, which is the intended behaviour; re-run the
-set once the notes are filled to see those cases pass. Nothing unsafe was sent
-and nothing was invented.
+25/32 passed. **Every failure is a needless hold, and every one is a question
+whose answer belongs in `data/kb/about_me.md`, which was empty for this run**
+— "uko wapi saa hii", "unafanya kazi gani", "utarudi saa ngapi". The replies
+were "sijui bado wacha nicheki nitakuambia", not inventions, which is the
+intended fail-closed behaviour. Fill the notes and re-run before reading
+anything else into the number.
 
-## Deploying with Coolify
+Two comparisons worth keeping in mind:
 
-Two containers, built from this repo: `Dockerfile` (backend) and
-`whatsapp-bridge/Dockerfile` (bridge). `docker-compose.yaml` is what Coolify
-deploys. Only the backend is ever published; the bridge's send API stays on the
-private network.
-
-**Before the first deploy.** A dashboard on the open internet is a different
-threat model from one on loopback, so two things are not optional:
-
-```bash
-python scripts/hash_password.py     # -> DASHBOARD_PASSWORD_HASH
-```
-
-`DASHBOARD_PASSWORD_HASH` replaces `DASHBOARD_PASSWORD`; the plaintext variable
-is ignored when a hash is present. Coolify terminates TLS, which is what makes
-the session cookie's `secure` flag take effect — `app/dashboard.py` sets it from
-the request scheme, so over plain HTTP it correctly declines to.
-
-**In Coolify:** new resource → Docker Compose → point it at this repo. Compose's
-`${VAR:?}` form makes these blocking fields, so the deploy will not start until
-each has a value:
-
-| Variable | Why it blocks |
-|---|---|
-| `ANTHROPIC_API_KEY` | nothing can answer without it |
-| `DASHBOARD_PASSWORD_HASH` | the dashboard can send messages as you |
-| `ALLOWED_CONTACTS` | **empty means every sender is processed** |
-
-`BRIDGE_API_TOKEN` is not in that list on purpose: it is
-`${SERVICE_PASSWORD_64_BRIDGE}`, which Coolify generates once and gives to both
-services, because the name matches. Nobody has to invent or copy it.
-
-Set the domain on the **backend** service, port 8000.
-
-**Linking WhatsApp.** This is the part that has no terminal: open the `bridge`
-service's logs in Coolify and the QR code is printed there. Scan it once from
-WhatsApp → Linked devices. The `wa-session` volume keeps you linked across
-redeploys.
-
-**The three volumes**, and why each exists:
-
-| Volume | Holds | If you lose it |
-|---|---|---|
-| `app-data` | SQLite database, held queue, your notes, `contacts.json` | the assistant forgets everything and has no contacts |
-| `wa-session` | live credentials for the linked account | you re-scan the QR |
-| `model-cache` | BLIP's weights | every deploy re-downloads them |
-
-`app-data` is shared by both services so `contacts.json` exists once; both
-images run as uid 10001 so the permissions line up. Put `contacts.json`,
-`kb/about_me.md` and `style_examples.md` into it after the first deploy —
-Coolify's terminal into the backend container is the simplest way.
-
-**Sizing.** Roughly 2.5–4 GB of RAM: `faster-whisper` for voice notes runs on
-CTranslate2, and torch is there only for BLIP photo captions. The backend image
-installs the **CPU** torch wheel from PyTorch's own index — the default PyPI
-wheel for Linux is the CUDA build and drags in about 2 GB of `nvidia-*`
-packages a VPS will never execute. Dropping photo captions would remove torch
-entirely. On ARM, confirm a `cp312` aarch64 wheel exists for `torch==2.4.1`
-before expecting captions to work.
-
-**One risk that moving to a server adds rather than removes:** WhatsApp treats
-datacenter IPs with more suspicion than residential ones, and `whatsapp-web.js`
-is an unofficial client. The account bears that risk, not the server.
+- The pre-port OpenAI baseline (2026-10-04, 3 runs/case) scored 31/32 but let
+  **one unsafe message through**. Both Claude runs have let none through.
+- Against the Arabic case set, `schedule` went 2/4 → 0/4. That is the model
+  becoming *more* conservative, not worse: with no Schedule section to read
+  from, holding is correct, and the two earlier passes were answers given
+  without grounds. A higher score here is only meaningful once the notes are
+  filled.
 
 ## Project structure
 
