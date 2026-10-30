@@ -16,7 +16,8 @@ instead of OpenAI.
 | Live model call | ✅ | real key in `.env`; replies, Arianna's tools and the blank-input guard all verified live |
 | Eval set run | ✅ | 27/32, **0 unsafe sends**; the 5 misses are the empty notes, see below |
 | WhatsApp linked | ⬜ | ready; needs `ALLOWED_CONTACTS` and one QR scan |
-| Deploy (Coolify) | 🟡 | images build; not yet pushed to coolify.benardkimani.co.ke |
+| Deploy (Coolify) | ✅ | live at https://arie.benardkimani.co.ke/dashboard, Let's Encrypt |
+| WhatsApp linked | ⬜ | pairing-code linking deployed; account not linked yet |
 
 ## Done
 - Ported replies and Arianna from OpenAI to the Claude Messages API:
@@ -110,6 +111,29 @@ mix rather than tidying it into one language.
   that `run_eval.py` substitutes, instead of a hardcoded name.
 - `data/style_examples.md` — Kenyan placeholders, still to be replaced with
   real messages.
+
+## Done — deployment, live (2026-10-30)
+Running on Contabo via Coolify: project `Arianna`, resource `arie`, domain
+`arie.benardkimani.co.ke`. Two bugs only a real deployment could surface:
+
+- **The bridge crash-looped after every redeploy.** Chromium stamps
+  `SingletonLock`/`Cookie`/`Socket` in its profile with the hostname that
+  created them. The `wa-session` volume survives a redeploy on purpose, so the
+  QR need not be rescanned — but the new container has a new hostname, so
+  Chromium saw a lock owned by "another computer" and refused to start. The
+  bridge now clears those three names at startup; only one process ever uses
+  that profile, so a lock found there is always stale. Session credentials
+  (`Cookies`, `Local State`) are untouched. Commit 1051fc5.
+- **Linking by QR is impractical on a server.** The only place a QR renders is
+  Coolify's log viewer, it rotates about every 20 seconds, and WhatsApp reports
+  a stale scan as "Couldn't link device — try again later", which reads like a
+  fault rather than a timeout. `PAIRING_NUMBER` now makes the bridge call
+  `requestPairingCode()` instead: eight characters, about three minutes, typed
+  in rather than photographed. Falls back to the QR if the request fails.
+  Commit 1d76420.
+
+Note for the next person: the bare domain returns 404 by design — there is no
+route at `/`. The dashboard is at `/dashboard`.
 
 ## Decisions
 - Model defaults to `claude-opus-5-5`, effort `medium`, both overridable via
