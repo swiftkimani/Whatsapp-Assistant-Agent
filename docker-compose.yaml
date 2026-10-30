@@ -13,8 +13,10 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      # Coolify routes the domain here and substitutes the hostname.
-      SERVICE_FQDN_BACKEND_8000: /dashboard
+      # Coolify routes the domain here and substitutes the hostname. No path:
+      # a value here becomes the routed path, and restricting it to /dashboard
+      # would make every /api/* call the page makes 404.
+      SERVICE_FQDN_BACKEND_8000: ""
 
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5-5}
@@ -41,6 +43,10 @@ services:
       DASHBOARD_WHISPER_SIZE: ${DASHBOARD_WHISPER_SIZE:-small}
       TTS_PROVIDER: ${TTS_PROVIDER:-edge}
       TZ: ${TZ:-Africa/Cairo}
+    # Declared so Coolify's domain check can see the port uvicorn binds; the
+    # port is reachable on the internal network either way, never published.
+    expose:
+      - "8000"
     volumes:
       - app-data:/app/data
       - model-cache:/models
@@ -65,6 +71,8 @@ services:
       ALLOW_GROUPS: ${ALLOW_GROUPS:-false}
       CONTACTS_FILE: /app/data/contacts.json
       TZ: ${TZ:-Africa/Cairo}
+    expose:
+      - "3001"
     volumes:
       # Shared with the backend so contacts.json exists once. Both images run as
       # uid 10001, so the permissions line up.
