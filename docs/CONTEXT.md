@@ -195,6 +195,28 @@ logs, especially for senders who are not on the allowlist.
   is given to the model as true, so an empty section makes the assistant say it
   isn't sure, while a placeholder would make it state something false.
 
+## Deployment traps worth knowing (both cost hours)
+
+**1. Compose interpolation shreds anything containing `$`.** The dashboard
+rejected every correct password. The hash stored in Coolify was right; the
+hash the container received was not — 97 characters arrived as 66, because
+Compose read `$argon2id`, `$v`, `$m` and both base64 fields inside the value
+as variable references and replaced them with nothing. A hash in that state
+refuses every password with no error anywhere. Coolify's per-variable
+"Literal" setting did not prevent it. `DASHBOARD_PASSWORD_HASH_B64` now
+carries the hash base64-encoded, which has no `$` to mangle.
+*The lesson that generalises:* when a value looks right in the platform UI but
+behaves wrong, check it **inside the running container** —
+`docker exec <c> sh -c 'echo ${#VAR}'`. Three rounds were lost verifying the
+stored value, which was never the broken layer.
+
+**2. The server's database is not the laptop's.** `auto_reply` was switched
+off locally and assumed to be off everywhere; the server came up at its
+default, which is **on**. Nothing escaped only because the allowlist held one
+number whose messages are blocked as `fromMe` before the allowlist is read.
+Any setting stored in `data/assistant.db` — the kill switch, direct send,
+per-contact modes — has to be set again per deployment.
+
 ## Known issues / deferred
 - **`USER_NAME` is still `Shahd`** in `.env`, inherited from the original
   project. The assistant replies *as* this person and treats a bare mention of
