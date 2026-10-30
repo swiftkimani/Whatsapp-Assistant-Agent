@@ -11,6 +11,7 @@ history and out of the process list.
 Paste the output into Coolify's environment variables (or .env) as
 DASHBOARD_PASSWORD_HASH, and remove DASHBOARD_PASSWORD.
 """
+import base64
 import getpass
 import sys
 
@@ -27,7 +28,14 @@ def main() -> int:
     if password != getpass.getpass("Again: "):
         print("Those don't match.", file=sys.stderr)
         return 1
-    print(PasswordHasher().hash(password))
+    digest = PasswordHasher().hash(password)
+    print()
+    print("DASHBOARD_PASSWORD_HASH=" + digest)
+    print()
+    print("# If your platform interpolates $NAME inside environment values")
+    print("# (Coolify, and anything else that runs values through Docker")
+    print("# Compose), use this instead — base64 has no $ to mangle:")
+    print("DASHBOARD_PASSWORD_HASH_B64=" + base64.b64encode(digest.encode()).decode())
     return 0
 
 

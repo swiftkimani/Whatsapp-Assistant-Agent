@@ -3,6 +3,8 @@
 The hash is what makes the dashboard safe to expose beyond loopback, so the
 plaintext variable must stop being consulted the moment a hash is configured.
 """
+import base64
+
 import pytest
 from argon2 import PasswordHasher
 
@@ -44,3 +46,21 @@ def test_login_over_http_works_against_a_hash(client, monkeypatch):
     assert client.post("/api/login", json={"password": "wrong-one"}).status_code == 401
     assert client.post("/api/login", json={"password": GOOD}).status_code == 200
     assert client.get("/api/session").status_code == 200
+
+
+def test_a_base64_hash_is_read_and_beats_a_mangled_plain_one(monkeypatch):
+    """An argon2 hash is built from "$" separators, and platforms that
+    interpolate "$NAME" inside environment values shred it into something that
+    rejects every password. Base64 has no "$", so it survives, and it wins."""
+    digest = PasswordHasher().hash(GOOD)
+    monkeypatch.setenv("DASHBOARD_PASSWORD_HASH_B64", base64.b64encode(digest.encode()).decode())
+    monkeypatch.setenv("DASHBOARD_PASSWORD_HASH", "=19=65536,t=3,p=4/what-compose-left-behind")
+    assert dashboard._password_hash() == digest
+    assert dashboard._check_password(GOOD)
+    assert not dashboard._check_password("not-it")
+
+
+def test_unreadable_base64_rejects_rather_than_crashing(monkeypatch):
+    monkeypatch.setenv("DASHBOARD_PASSWORD_HASH_B64", "this is not base64 !!")
+    assert dashboard._password_hash() == ""
+    assert not dashboard._check_password(GOOD)

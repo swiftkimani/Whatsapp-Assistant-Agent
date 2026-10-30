@@ -25,7 +25,13 @@ services:
 
       # argon2id only. The plaintext DASHBOARD_PASSWORD is for a dashboard on
       # loopback; this one is on the internet.
-      DASHBOARD_PASSWORD_HASH: ${DASHBOARD_PASSWORD_HASH:?}
+      #
+      # Base64, because an argon2 hash is built from "$$" separators and this
+      # value passes through Docker Compose interpolation, which reads "$$NAME"
+      # as a variable and replaces it with nothing. A raw hash arrives shredded
+      # and then rejects every password. scripts/hash_password.py prints both.
+      DASHBOARD_PASSWORD_HASH_B64: ${DASHBOARD_PASSWORD_HASH_B64:?}
+      DASHBOARD_PASSWORD_HASH: ${DASHBOARD_PASSWORD_HASH:-}
 
       # Generated once by Coolify and identical in both services, because the
       # name matches. Nobody has to invent or copy it.

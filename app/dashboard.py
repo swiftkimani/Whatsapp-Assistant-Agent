@@ -11,6 +11,7 @@ or stored in the browser. Changing it in .env signs every device out.
 Env vars are read when a request arrives (not at import time) because main.py
 calls load_dotenv() late.
 """
+import base64
 import hashlib
 import hmac
 import json
@@ -78,7 +79,22 @@ def _password() -> str:
 def _password_hash() -> str:
     """An argon2id hash of the password. Required once the dashboard is exposed
     beyond localhost: it is the only form that survives someone reading the
-    environment. Generate one with scripts/hash_password.py."""
+    environment. Generate one with scripts/hash_password.py.
+
+    DASHBOARD_PASSWORD_HASH_B64 holds the same hash, base64-encoded, and wins
+    when both are set. An argon2 hash is built out of "$" separators, and
+    deployment platforms that interpolate "$NAME" inside environment values
+    silently shred it — "$argon2id$v=19$m=..." arrives as "=19=65536,..." and
+    then rejects every password that will ever be typed. Base64 contains no
+    "$", so it cannot be mangled that way.
+    """
+    encoded = os.getenv("DASHBOARD_PASSWORD_HASH_B64", "").strip()
+    if encoded:
+        try:
+            return base64.b64decode(encoded, validate=True).decode("utf-8").strip()
+        except (ValueError, UnicodeDecodeError):
+            log_event("dashboard_password_hash_b64_unreadable", level="error")
+            return ""
     return os.getenv("DASHBOARD_PASSWORD_HASH", "")
 
 
