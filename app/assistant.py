@@ -9,7 +9,6 @@ Sending: send_message goes out immediately when "direct send" is on (the page
 performs it through the normal, validated /api/send-text route); draft_message
 always shows a card to review first.
 """
-import json
 import os
 import re
 from datetime import datetime
@@ -20,17 +19,31 @@ from pydantic import BaseModel, Field
 from app import db
 from app.controls import CAIRO, RANGE_LABELS, find_messages
 from app.dashboard import _contact_names, require_auth
-from app.llm import _STYLE_EXAMPLES, _get_client
+from app.llm import EFFORT, MODEL, _STYLE_EXAMPLES, _get_client, _normalize_history
 
 router = APIRouter()
 AUTH = [Depends(require_auth)]
-ASSISTANT_NAME = os.getenv("ASSISTANT_NAME", "Mika")
+ASSISTANT_NAME = os.getenv("ASSISTANT_NAME", "Arianna")
+# Short forms she is also called, comma-separated. The wake word in
+# dashboard.html has its own list of spellings the recognizer may produce.
+ASSISTANT_NICKNAMES = os.getenv("ASSISTANT_NICKNAMES", "Arie")
 _ARABIC = re.compile(r"[\u0600-\u06FF]")
+
+# Room for the thinking tokens that share this budget; a tool call or a chat
+# reply is a few dozen tokens of it.
+MAX_TOKENS = 4096
 
 
 def _tool(name: str, description: str, properties: dict, required: list[str]) -> dict:
-    return {"type": "function", "function": {"name": name, "description": description,
-            "parameters": {"type": "object", "properties": properties, "required": required}}}
+    # strict only where every parameter is required: it guarantees the arguments
+    # validate against the schema. show_messages has optional filters instead,
+    # and handle_call checks each of them against its allowed values anyway.
+    tool = {"name": name, "description": description,
+            "input_schema": {"type": "object", "properties": properties,
+                             "required": required, "additionalProperties": False}}
+    if set(required) == set(properties):
+        tool["strict"] = True
+    return tool
 
 
 TOOLS = [
@@ -48,7 +61,8 @@ TOOLS = [
 
 
 def _system_prompt(names: list[str], now: datetime) -> str:
-    return f"""Your name is {ASSISTANT_NAME}. You are the owner's private assistant inside her WhatsApp dashboard. Talk with her naturally and helpfully in whatever language she writes in: answer questions, help her think, help her word things. You can also act through tools.
+    also = f" She also calls you {ASSISTANT_NICKNAMES}, so answer to that too." if ASSISTANT_NICKNAMES.strip() else ""
+    return f"""Your name is {ASSISTANT_NAME}.{also} You are the owner's private assistant inside her WhatsApp dashboard. Talk with her naturally and helpfully in whatever language she writes in: answer questions, help her think, help her word things. You can also act through tools.
 It is {now.strftime('%A %d %B %Y, %I:%M %p')} (Cairo time).
 Known contacts (the only valid recipients and message filters): {", ".join(names) or "none"}.
 Match her wording to a listed name, written exactly as listed (for example "ماما", "mama" or "mom" means the listed name that is her mother). If you can't tell who she means, ask her. Never invent contacts, numbers or locations.
@@ -135,26 +149,28 @@ def handle_call(fn: str, args: dict, names: list[str], direct: bool, arabic: boo
 @router.post("/api/assistant", dependencies=AUTH)
 def assistant(body: ChatRequest):  # plain def: runs in a thread pool
     names = _contact_names()
-    history = [
-        {"role": m["role"], "content": str(m.get("content", ""))[:1500]}
-        for m in body.history if m.get("role") in ("user", "assistant")
-    ]
-    resp = _get_client().chat.completions.create(
-        model=os.getenv("OPENAI_MODEL"),
-        tools=TOOLS,
-        temperature=0.3,
-        max_tokens=600,
-        messages=[{"role": "system", "content": _system_prompt(names, datetime.now(CAIRO))}, *history,
-                  {"role": "user", "content": body.message}],
+    history = _normalize_history(
+        [{"role": m.get("role"), "content": str(m.get("content", ""))[:1500]} for m in body.history]
     )
-    msg = resp.choices[0].message
-    if not msg.tool_calls:
-        return {"reply": (msg.content or "").strip(), "action": None}
+    resp = _get_client().messages.create(
+        model=MODEL,
+        max_tokens=MAX_TOKENS,
+        system=_system_prompt(names, datetime.now(CAIRO)),
+        tools=TOOLS,
+        output_config={"effort": EFFORT},
+        messages=[*history, {"role": "user", "content": body.message}],
+    )
 
-    call = msg.tool_calls[0]
-    try:
-        args = json.loads(call.function.arguments)
-    except ValueError:
-        return {"reply": "I couldn't understand that instruction. Try rephrasing it.", "action": None}
     arabic = bool(_ARABIC.search(body.message))
-    return handle_call(call.function.name, args, names, db.direct_send_enabled(), arabic)
+    unclear = "مش فاهمة، قوليها بطريقة تانية." if arabic else "I didn't catch that — try saying it another way."
+
+    call = next((b for b in resp.content if b.type == "tool_use"), None)
+    if call is None:
+        # Plain conversation: the visible answer is the text blocks. Thinking
+        # blocks are in content too, and are not part of the reply.
+        text = "".join(b.text for b in resp.content if b.type == "text").strip()
+        return {"reply": text or unclear, "action": None}
+
+    if not isinstance(call.input, dict):
+        return {"reply": unclear, "action": None}
+    return handle_call(call.name, call.input, names, db.direct_send_enabled(), arabic)

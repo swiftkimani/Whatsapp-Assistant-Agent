@@ -1,13 +1,26 @@
+import json
 import os
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
-import json   # add to the imports at the top
 
-from openai import OpenAI
+import anthropic
 
-_client: OpenAI | None = None
+from app.log import log_event
+
+_client: anthropic.Anthropic | None = None
 CAIRO_TZ = ZoneInfo("Africa/Cairo")
+
+MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-5-5")
+
+# Thinking cannot be disabled on this model family, so effort is the only depth
+# control. "medium" is the model default; raise it if the eval set shows unsafe
+# sends, lower it for faster, cheaper replies.
+EFFORT = os.getenv("ANTHROPIC_EFFORT", "medium")
+
+# Thinking tokens are drawn from max_tokens, so this is far above the one line
+# of reply we actually want. Only tokens really generated are billed.
+MAX_TOKENS = int(os.getenv("ANTHROPIC_MAX_TOKENS", "4096"))
 
 KB_PATH = Path(__file__).resolve().parent.parent / "data" / "kb" / "about_me.md"
 STYLE_EXAMPLES_PATH = Path(__file__).resolve().parent.parent / "data" / "style_examples.md"
@@ -38,10 +51,12 @@ _SCHEDULE_INFO = _load_md_section(KB_PATH, "Schedule")
 USER_NAME = os.getenv("USER_NAME", "Shahd")
 
 
-def _get_client() -> OpenAI:
+def _get_client() -> anthropic.Anthropic:
     global _client
     if _client is None:
-        _client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+        # No api_key argument: the SDK reads ANTHROPIC_API_KEY, or an
+        # `ant auth login` profile, whichever is present.
+        _client = anthropic.Anthropic()
     return _client
 
 
@@ -220,30 +235,73 @@ def _parse_answer(raw: str) -> dict:
         return {"reply": "", "grounded": False, "needs_owner": True}
 
 
+# Shape of the answer, enforced by the API rather than asked for in the prompt.
+ANSWER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "reply": {"type": "string"},
+        "grounded": {"type": "boolean"},
+        "needs_owner": {"type": "boolean"},
+    },
+    "required": ["reply", "grounded", "needs_owner"],
+    "additionalProperties": False,
+}
+
+
+def _normalize_history(history: list[dict] | None) -> list[dict]:
+    """A conversation must start with the contact's turn. The rolling memory
+    window can begin on a reply of ours, and a held message stores the incoming
+    text with no reply after it, so the stored history is neither guaranteed to
+    start with "user" nor to alternate. Consecutive same-role turns are fine
+    (they get combined), a leading "assistant" turn is rejected."""
+    turns = [
+        {"role": m["role"], "content": str(m.get("content") or "")}
+        for m in (history or [])
+        if m.get("role") in ("user", "assistant") and str(m.get("content") or "").strip()
+    ]
+    while turns and turns[0]["role"] != "user":
+        turns.pop(0)
+    return turns
+
+
 def chat_completion(user_message: str, history: list[dict] | None = None, message_type: str = "text",examples: list[dict] | None = None, now: datetime | None = None) -> dict:
+    if not user_message.strip():
+        # Nothing to reply to — a voice note Whisper heard nothing in, say. An
+        # empty turn is rejected by the API, so hold it without spending a call.
+        log_event("llm_skipped_empty_input", level="warning")
+        return _parse_answer("")
+
     now = now or datetime.now(CAIRO_TZ)
     time_context = f"Current day and time: {now.strftime('%A')}, {now.strftime('%I:%M %p')} (Cairo time)."
 
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "system", "content": time_context},
-    ]
+    # The long, unchanging part goes first and carries the cache breakpoint; the
+    # per-message parts (time, examples, image hint) follow it so they never
+    # invalidate the cached prefix.
+    system = [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}},
+              {"type": "text", "text": time_context}]
     if examples:
         shots = "\n".join(f"They wrote: {e['incoming']}\nYou replied: {e['reply']}" for e in examples)
-        messages.append({"role": "system", "content": (
+        system.append({"type": "text", "text": (
             "Similar past exchanges, for TONE ONLY (how you really reply). They may be outdated, "
             "so never take facts from them such as where you are, times or plans:\n" + shots)})
     if message_type == "image":
-        messages.append({"role": "system", "content": IMAGE_HINT})
-    if history:
-        messages.extend(history)
-    messages.append({"role": "user", "content": user_message})
+        system.append({"type": "text", "text": IMAGE_HINT})
 
-    response = _get_client().chat.completions.create(
-        model=os.getenv("OPENAI_MODEL"),
-        messages=messages,
-        temperature=0.1,
-        max_tokens=400,
-        response_format={"type": "json_object"},
+    response = _get_client().messages.create(
+        model=MODEL,
+        max_tokens=MAX_TOKENS,
+        system=system,
+        messages=[*_normalize_history(history), {"role": "user", "content": user_message}],
+        output_config={"effort": EFFORT,
+                       "format": {"type": "json_schema", "schema": ANSWER_SCHEMA}},
     )
-    return _parse_answer(response.choices[0].message.content or "")
+
+    # Thinking blocks come before the answer, so pick the text block out rather
+    # than reading content[0].
+    answer = next((b.text for b in response.content if b.type == "text"), "")
+    if not answer:
+        # A refusal or a max_tokens cut-off leaves no answer. _parse_answer turns
+        # that into a hold; log why, without any message text.
+        log_event("llm_no_answer", level="warning", stop_reason=response.stop_reason,
+                  model=response.model)
+    return _parse_answer(answer)

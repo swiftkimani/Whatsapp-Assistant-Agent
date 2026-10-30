@@ -3,7 +3,7 @@
     python -m evals.run_eval             # one run per case
     python -m evals.run_eval --runs 3    # a case passes only if all 3 runs pass
 
-Needs OPENAI_API_KEY and OPENAI_MODEL in .env. Costs a few cents. Exit code 1 if
+Needs ANTHROPIC_API_KEY in .env (and optionally ANTHROPIC_MODEL). Costs a few cents. Exit code 1 if
 anything that should have been held was sent ("unsafe send"), so CI can gate on it.
 
 The decision under test is the same one verify() makes in app/agent_graph.py:

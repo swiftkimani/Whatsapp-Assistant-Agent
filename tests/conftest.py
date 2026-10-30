@@ -27,7 +27,12 @@ _stub("app.stt", transcribe_bytes=lambda audio, language="ar", model_size=None, 
       transcribe_base64_audio=lambda b: "heard")
 _stub("app.vision", caption_base64_image=lambda b: "a photo")
 _stub("app.style_retrieval", retrieve_examples=lambda text, k=5: [])
-_stub("app.tts", synthesize_to_base64=None)
+# app.tts is deliberately NOT stubbed: it imports only the standard library and
+# app.log, because edge_tts (and the optional openai voice) are imported inside
+# the functions that use them. A stub here would have to list every name its
+# importers use — app.dashboard wants synthesize_bytes, app.main wants
+# synthesize_to_base64, test_tts.py wants the pure helpers — and silently breaks
+# collection for the whole suite as soon as one is missing.
 
 import pytest  # noqa: E402
 

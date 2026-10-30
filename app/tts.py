@@ -40,9 +40,12 @@ def clean_for_speech(text: str) -> str:
 
 
 def _openai_speech(text: str) -> bytes:
-    from app.llm import _get_client   # lazy: same OpenAI key as the chat model
+    """The replies themselves come from Claude, which has no speech endpoint, so
+    this one optional voice keeps its own client and its own OPENAI_API_KEY.
+    Imported lazily, so nothing needs the openai package unless TTS_PROVIDER=openai."""
+    from openai import OpenAI
 
-    resp = _get_client().audio.speech.create(
+    resp = OpenAI().audio.speech.create(
         model=os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts"),
         voice=os.getenv("OPENAI_TTS_VOICE", "coral"),
         input=text,
