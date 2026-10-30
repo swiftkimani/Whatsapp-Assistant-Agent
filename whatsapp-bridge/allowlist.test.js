@@ -1,0 +1,71 @@
+const assert = require("node:assert/strict");
+const { test } = require("node:test");
+
+const { checkAllowed } = require("./allowlist");
+
+const ALLOWED = ["254797877563", "254776599915"];
+const opts = (extra = {}) => ({ allowed: ALLOWED, allowGroups: false, ...extra });
+
+test("a listed number in the normal form gets through", async () => {
+  const r = await checkAllowed("254776599915@c.us", opts());
+  assert.equal(r.allowed, true);
+  assert.equal(r.kind, "direct");
+});
+
+test("a number not on the list is refused", async () => {
+  const r = await checkAllowed("254700000000@c.us", opts());
+  assert.equal(r.allowed, false);
+  assert.equal(r.reason, "not_in_allowlist");
+});
+
+test("groups are refused even when the sender is listed", async () => {
+  const r = await checkAllowed("254776599915-1497087597@g.us", opts());
+  assert.equal(r.allowed, false);
+  assert.equal(r.reason, "groups_off");
+});
+
+test("groups get through when they are switched on", async () => {
+  const r = await checkAllowed("254776599915@g.us", opts({ allowGroups: true }));
+  assert.equal(r.allowed, true);
+});
+
+test("a device suffix does not stop a match", async () => {
+  // WhatsApp appends ":12" for a specific device on multi-device accounts.
+  const r = await checkAllowed("254776599915:12@c.us", opts());
+  assert.equal(r.allowed, true);
+});
+
+test("the same person stored in another format still matches", async () => {
+  // Saved locally as 0776599915, listed as 254776599915 — one human.
+  const r = await checkAllowed("0776599915@c.us", opts());
+  assert.equal(r.allowed, true, "last-9-digit comparison should match");
+});
+
+test("an @lid privacy id is resolved to a real number before comparing", async () => {
+  const r = await checkAllowed("112257593794569@lid", opts({
+    resolveContact: async () => ({ number: "+254 776 599915" }),
+  }));
+  assert.equal(r.allowed, true);
+  assert.equal(r.number, "254776599915", "punctuation should be stripped");
+});
+
+test("an @lid that resolves to someone else is refused", async () => {
+  const r = await checkAllowed("999999999999@lid", opts({
+    resolveContact: async () => ({ number: "254700000000" }),
+  }));
+  assert.equal(r.allowed, false);
+});
+
+test("an @lid that cannot be resolved fails closed", async () => {
+  const r = await checkAllowed("112257593794569@lid", opts({
+    resolveContact: async () => { throw new Error("offline"); },
+  }));
+  assert.equal(r.allowed, false, "an unresolvable id must not be let through");
+  assert.equal(r.reason, "lid_unresolved");
+});
+
+test("an empty allowlist lets everyone through, which is the documented risk", async () => {
+  const r = await checkAllowed("254700000000@c.us", { allowed: [], allowGroups: false });
+  assert.equal(r.allowed, true);
+  assert.equal(r.reason, "allowlist_empty");
+});

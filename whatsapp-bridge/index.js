@@ -8,6 +8,7 @@ const axios = require("axios");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const { checkAllowed } = require("./allowlist");
 const { startBridgeApi } = require("./bridge_api");
 
 // Load the SAME .env file the Python backend uses, from the project root
@@ -35,26 +36,18 @@ const ALLOWED_CONTACTS = (process.env.ALLOWED_CONTACTS || "")
   .map((c) => c.trim())
   .filter(Boolean);
 
-// Applied BEFORE anything else, in both echo mode and real mode.
-// Some contacts show up as an opaque "@lid" privacy ID instead of their
-// real phone number ("@c.us") — this resolves those back to a phone
-// number first, so ALLOWED_CONTACTS only ever needs to list phone numbers.
-async function checkAllowed(msg) {
-  const from = msg.from;
-  let number = from.split("@")[0];
-  if (from.endsWith("@g.us") && !ALLOW_GROUPS) return { allowed: false, number };
-
-  if (from.endsWith("@lid")) {
-    try {
-      const contact = await msg.getContact();
-      if (contact && contact.number) number = contact.number.replace(/\D/g, ""); // digits only
-    } catch (err) {
-      console.error("Could not resolve @lid contact to a phone number:", err.message);
-    }
-  }
-
-  if (ALLOWED_CONTACTS.length === 0) return { allowed: true, number }; // open: tighten before going live
-  return { allowed: ALLOWED_CONTACTS.includes(number), number };
+// Applied BEFORE anything else, in both echo mode and real mode. The rules
+// live in allowlist.js so they can be tested without a WhatsApp connection —
+// this is the boundary that decides whose messages get transcribed, stored and
+// sent to a model, and it had no tests at all. Run them with: npm test
+function allowCheck(msg) {
+  return checkAllowed(msg.from, {
+    allowed: ALLOWED_CONTACTS,
+    allowGroups: ALLOW_GROUPS,
+    // Some contacts arrive as an opaque "@lid" privacy id rather than a
+    // number; only then is a lookup worth the round trip.
+    resolveContact: () => msg.getContact(),
+  });
 }
 
 // Headless on a server, but WhatsApp now asks for a passkey when linking a new
@@ -156,11 +149,9 @@ client.on("message", async (msg) => {
       console.log(`[BLOCKED - fromMe] ${anon(msg.from)}`);
       return;
     }
-    const { allowed, number } = await checkAllowed(msg);
+    const { allowed, number, kind, reason } = await allowCheck(msg);
     if (!allowed) {
-      const kind = msg.from.endsWith("@g.us") ? "group"
-        : msg.from.endsWith("@lid") ? "lid" : "direct";
-      console.log(`[BLOCKED - not allowed] ${anon(msg.from)} kind=${kind} resolved=${anon(number)}`);
+      console.log(`[BLOCKED] ${anon(msg.from)} kind=${kind} reason=${reason} resolved=${anon(number)}`);
       return;
     }
     console.log(`[ALLOWED] ${anon(msg.from)} type=${msg.type}`);

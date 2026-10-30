@@ -4,7 +4,8 @@
   "description": "Thin WhatsApp Web connection that forwards messages to the Python agent",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "node --test allowlist.test.js"
   },
   "dependencies": {
     "axios": "^1.7.7",
