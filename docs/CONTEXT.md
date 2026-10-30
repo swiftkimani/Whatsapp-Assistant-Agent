@@ -17,7 +17,7 @@ instead of OpenAI.
 | Eval set run | ✅ | 27/32, **0 unsafe sends**; the 5 misses are the empty notes, see below |
 | WhatsApp linked | ⬜ | ready; needs `ALLOWED_CONTACTS` and one QR scan |
 | Deploy (Coolify) | ✅ | live at https://arie.benardkimani.co.ke/dashboard, Let's Encrypt |
-| WhatsApp linked | ⬜ | pairing-code linking deployed; account not linked yet |
+| WhatsApp linked | ✅ | linked on the server; survives redeploys with no QR |
 
 ## Done
 - Ported replies and Arianna from OpenAI to the Claude Messages API:
@@ -135,6 +135,40 @@ Running on Contabo via Coolify: project `Arianna`, resource `arie`, domain
 Note for the next person: the bare domain returns 404 by design — there is no
 route at `/`. The dashboard is at `/dashboard`.
 
+## Done — linking (2026-10-31)
+The account is linked and the server survives redeploys without a QR. Getting
+there needed three separate fixes, each hiding the next:
+
+1. **Stale Chromium locks** (1051fc5) — see above. Without this the bridge
+   crash-looped on every redeploy, and a transplanted profile *always* carries
+   locks, so nothing else would have worked either.
+2. **A WhatsApp Web version pin ~30 million builds old** (78ad325). The library
+   drives WhatsApp Web's internal modules, so it pins the build it was written
+   against. WhatsApp keeps serving an old build to linked sessions but refuses
+   to link a NEW device on one, reporting it as "Couldn't link device — try
+   again later". `WA_WEB_VERSION` overrides it; **this will go stale again**,
+   and that message is the symptom to look for.
+3. **A passkey gate WhatsApp added around 2026-06-30.** The link handshake now
+   wants a WebAuthn ceremony, which a headless container cannot perform. It
+   broke Baileys, whatsmeow and whatsapp-rust the same day and whatsapp-web.js
+   has no fix for it.
+
+**How the gate was passed:** linked on a laptop with `HEADLESS=false`
+(5bec04a), where a real browser and Touch ID can complete the ceremony, then
+the resulting profile was moved into the server's `wa-session` volume. The gate
+applies only at link time, so the server never faces it. The transplant was
+macOS/ARM → Linux/x86 and worked; the profile is ~345 MB because the WhatsApp
+IndexedDB carries message history, not just keys.
+
+**If the link is ever lost**, that is the procedure: link on a laptop, copy
+`.wwebjs_auth/session` into the volume, `chown -R 10001:10001`, restart. A
+pre-transplant copy is kept on the server as `session.replaced`.
+
+Also fixed here: the bridge was logging senders' phone numbers and message text
+(6447f31). The Python side already hashed chat ids via `anon()`; the Node side
+never did. It mattered little on a laptop and matters on a host that keeps
+logs, especially for senders who are not on the allowlist.
+
 ## Decisions
 - Model defaults to `claude-opus-5-5`, effort `medium`, both overridable via
   `ANTHROPIC_MODEL` / `ANTHROPIC_EFFORT` so the eval set can be used to tune
@@ -182,6 +216,11 @@ route at `/`. The dashboard is at `/dashboard`.
 - `pytest 9.2.0` is newer than anything this repo was tested on.
 
 ## How to run right now
+Live at **https://arie.benardkimani.co.ke/dashboard** (the bare domain 404s —
+there is no route at `/`). Deployed by Coolify: project `Arianna`, resource
+`arie`, on Contabo. Redeploy from the Coolify UI; the session volume persists.
+
+
 ```bash
 ./scripts/dev.sh            # backend, waits for /health, then the bridge
 ./scripts/dev.sh backend    # backend only — dashboard, Arianna, stored messages
