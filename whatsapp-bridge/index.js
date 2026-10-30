@@ -5,6 +5,7 @@
 const { Client, LocalAuth, MessageMedia } = require("whatsapp-web.js");
 const qrcode = require("qrcode-terminal");
 const axios = require("axios");
+const fs = require("fs");
 const path = require("path");
 const { startBridgeApi } = require("./bridge_api");
 
@@ -179,6 +180,43 @@ client.on("message", async (msg) => {
 //     console.error("Error handling message:", err.message);
 //   }
 // });
+
+// Chromium writes SingletonLock/Cookie/Socket into its profile, tagged with the
+// hostname of the machine that created them. A container redeploy keeps the
+// session volume (so the QR does not have to be scanned again) but gets a NEW
+// hostname, so Chromium finds a lock belonging to "another computer", refuses
+// to launch, and the bridge crash-loops without ever printing a QR.
+//
+// Only one bridge process ever uses this profile, so any lock found at startup
+// is left over from a container that no longer exists.
+function clearStaleChromiumLocks(dir) {
+  const names = /^Singleton(Lock|Cookie|Socket)$/;
+  let removed = 0;
+  const walk = (d) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(d, { withFileTypes: true });
+    } catch {
+      return; // first run: the profile does not exist yet
+    }
+    for (const entry of entries) {
+      const full = path.join(d, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (names.test(entry.name)) {
+        try {
+          fs.unlinkSync(full);
+          removed += 1;
+        } catch (err) {
+          console.error(`Could not remove stale lock ${full}:`, err.message);
+        }
+      }
+    }
+  };
+  walk(dir);
+  if (removed) console.log(`Cleared ${removed} stale Chromium lock file(s) from a previous container.`);
+}
+
+clearStaleChromiumLocks(path.resolve(__dirname, ".wwebjs_auth"));
 
 client.initialize().catch((err) => {
   console.error("Failed to start WhatsApp client:", err.message);
