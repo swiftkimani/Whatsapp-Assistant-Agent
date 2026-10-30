@@ -71,6 +71,8 @@ services:
       ALLOWED_CONTACTS: ${ALLOWED_CONTACTS:?}
       ALLOW_GROUPS: ${ALLOW_GROUPS:-false}
       CONTACTS_FILE: /app/data/contacts.json
+      # Set to link by typed code rather than by scanning a QR off a log viewer.
+      PAIRING_NUMBER: ${PAIRING_NUMBER:-}
       TZ: ${TZ:-Africa/Nairobi}
     expose:
       - "3001"

@@ -71,10 +71,40 @@ const client = new Client({
   puppeteer: puppeteerConfig,
 });
 
-client.on("qr", (qr) => {
-  console.log("Scan this QR code with WhatsApp > Linked devices:");
-  qrcode.generate(qr, { small: true });
+// Linking by pairing code instead of QR. A QR has to be photographed off a
+// screen before it rotates, which is roughly a 20 second window and a losing
+// race when the only place it renders is a web log viewer. A pairing code is
+// eight characters, lasts about three minutes, and is typed in by hand.
+// Set PAIRING_NUMBER to the number of the account being linked, digits only.
+const PAIRING_NUMBER = (process.env.PAIRING_NUMBER || "").replace(/\D/g, "");
+let pairingRequested = false;
+
+function announcePairingCode(code) {
+  const line = "=".repeat(54);
+  console.log(`\n${line}\n  PAIRING CODE: ${code}\n  On your phone: WhatsApp > Linked devices >\n  "Link with phone number instead", then type this code.\n${line}\n`);
+}
+
+client.on("qr", async (qr) => {
+  if (!PAIRING_NUMBER) {
+    console.log("Scan this QR code with WhatsApp > Linked devices:");
+    qrcode.generate(qr, { small: true });
+    return;
+  }
+  // The QR event is the signal that the client is ready to pair; ask once, then
+  // let WhatsApp refresh the code on its own interval via the "code" event.
+  if (pairingRequested) return;
+  pairingRequested = true;
+  try {
+    announcePairingCode(await client.requestPairingCode(PAIRING_NUMBER));
+  } catch (err) {
+    pairingRequested = false;
+    console.error("Could not request a pairing code:", err.message);
+    console.log("Falling back to the QR code:");
+    qrcode.generate(qr, { small: true });
+  }
 });
+
+client.on("code", announcePairingCode);
 
 // client.on("ready", () => {
 //   console.log(`WhatsApp bridge is ready. ECHO_ONLY = ${ECHO_ONLY}`);
