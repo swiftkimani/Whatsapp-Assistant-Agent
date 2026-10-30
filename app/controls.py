@@ -1,4 +1,5 @@
 """Owner controls: auto-reply kill switch, per-contact modes, activity feed."""
+import os
 from datetime import datetime, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo
@@ -13,13 +14,14 @@ from app.log import log_event
 router = APIRouter()
 AUTH = [Depends(require_auth)]
 _NAMED_KINDS = {"auto_reply", "held", "held_sent"}  # audit rows whose target is a chat id
-CAIRO = ZoneInfo("Africa/Cairo")
+# The owner's timezone. TZ overrides it, which is how the containers are set.
+LOCAL_TZ = ZoneInfo(os.getenv("TZ", "Africa/Nairobi"))
 RANGE_LABELS = {"today": "today", "yesterday": "yesterday", "last_7_days": "in the last 7 days", "all": "in the stored history"}
 
 
 def time_bounds(label: str, now: datetime | None = None) -> tuple[float | None, float | None]:
-    """(since, until) as timestamps, using Cairo midnight as the start of a day."""
-    now = now or datetime.now(CAIRO)
+    """(since, until) as timestamps, using local midnight as the start of a day."""
+    now = now or datetime.now(LOCAL_TZ)
     midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
     if label == "today":
         return midnight.timestamp(), None

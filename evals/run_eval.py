@@ -11,6 +11,7 @@ send only if there is a reply, it is grounded, and it does not need the owner.
 """
 import argparse
 import json
+import os
 import re
 import sys
 from collections import defaultdict
@@ -26,13 +27,16 @@ sys.path.insert(0, str(ROOT))
 
 from app.llm import chat_completion, clean_reply   # noqa: E402
 
-CAIRO = ZoneInfo("Africa/Cairo")
+LOCAL_TZ = ZoneInfo(os.getenv("TZ", "Africa/Nairobi"))
 PUNCTUATION = re.compile(r"[.,،!;:]")  # the persona forbids these
 
 
 def run_case(case: dict) -> dict:
-    now = datetime.fromisoformat(case["now"]).replace(tzinfo=CAIRO) if case.get("now") else None
-    out = chat_completion(case["message"], [], "text", None, now=now)
+    now = datetime.fromisoformat(case["now"]).replace(tzinfo=LOCAL_TZ) if case.get("now") else None
+    # The name-only cases test what happens when someone just calls your name,
+    # so they have to use the configured name rather than a hardcoded one.
+    message = case["message"].replace("{USER_NAME}", os.getenv("USER_NAME", "")).strip()
+    out = chat_completion(message, [], "text", None, now=now)
     action = "send" if out["reply"] and out["grounded"] and not out["needs_owner"] else "hold"
 
     problems = []

@@ -285,8 +285,8 @@ async def send_location(body: LocationRequest):
 async def transcribe(request: Request, lang: str = "auto"):
     """Raw audio bytes in the body (whatever the browser's MediaRecorder made).
     Returns text only: the page puts it in the input box and nothing is sent."""
-    if lang not in ("auto", "ar", "en"):
-        raise HTTPException(400, "Language must be auto, ar or en.")
+    if lang not in ("auto", "en", "sw"):
+        raise HTTPException(400, "Language must be auto, en or sw.")
     try:
         declared = int(request.headers.get("content-length", "0"))
     except ValueError:

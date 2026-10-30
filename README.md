@@ -1,6 +1,6 @@
 # WhatsApp Assistant Agent
 
-An AI assistant that answers my WhatsApp messages in my own voice (Egyptian Arabic, Franco-Arabic and English),
+An AI assistant that answers my WhatsApp messages in my own voice (Kenyan English, Sheng and Kiswahili),
 **and holds anything it isn't sure about for my approval instead of guessing.**
 
 > The goal is not "reply to everything". It is: **never say something I wouldn't say.**
@@ -103,7 +103,7 @@ flowchart LR
 
 Header switches: **Auto-reply** (kill switch), **Direct send**, **Voice chat**, and **Say Arianna** (hands-free).
 
-**Things you can say to Arianna** (Arabic or English):
+**Things you can say to Arianna** (English or Kiswahili):
 - "tell Mom I'm on my way" sends immediately when Direct send is on.
 - "write a message to Mom saying I'll be late" shows a draft to review.
 - "who messaged me today?" lists and reads out each message with the sender's name.
@@ -111,7 +111,7 @@ Header switches: **Auto-reply** (kill switch), **Direct send**, **Voice chat**, 
 - "send my location to Mom" sends the position of the device the dashboard is open on.
 
 **Voice**
-- *Dictation:* faster-whisper on the server, with automatic Arabic or English detection.
+- *Dictation:* faster-whisper on the server, with automatic English or Kiswahili detection.
 - *Spoken replies:* free Microsoft voices (edge-tts) by default, or an instructable OpenAI voice with `TTS_PROVIDER=openai` (needs its own `OPENAI_API_KEY`; it falls back to the free voice if that fails).
 - *Wake word* ("Arianna"): uses the browser's speech service in Chrome or Edge; the question itself is transcribed by Whisper.
 - An animated orb shows when Arianna is listening, thinking or speaking.
@@ -198,9 +198,11 @@ Copy `.env.example` and set at least the **bold** values.
 | **`ALLOWED_CONTACTS`** | Comma-separated phone numbers that get answered. Empty means everyone, so set it before going live |
 | `ALLOW_GROUPS` | Answer group chats (default `false`) |
 | `WHISPER_MODEL_SIZE`, `DASHBOARD_WHISPER_SIZE` | Model size for voice notes and for dashboard dictation |
-| `TTS_PROVIDER` | `edge` (free) or `openai` (an instructable, more Egyptian-sounding voice, paid per use) |
+| `TTS_PROVIDER` | `edge` (free) or `openai` (an instructable, more Kenyan-sounding voice, paid per use) |
 | `OPENAI_API_KEY`, `OPENAI_TTS_VOICE`, `OPENAI_TTS_STYLE`, `OPENAI_TTS_MODEL` | Only for `TTS_PROVIDER=openai`. Claude has no speech endpoint, so this one voice keeps its own key |
-| `DASHBOARD_VOICE_AR`, `DASHBOARD_VOICE_EN` | edge-tts voices |
+| `DASHBOARD_VOICE_SW`, `DASHBOARD_VOICE_EN` | edge-tts voices (`sw-KE-ZuriNeural`, `en-KE-AsiliaNeural`; male: `sw-KE-RafikiNeural`, `en-KE-ChilembaNeural`) |
+| `STT_LANGUAGE` | Whisper's language hint, `en` by default |
+| `TZ` | `Africa/Nairobi`; every schedule answer is worked out in it |
 | `ASSISTANT_NAME` | Arianna's name (also edit the wake-word spellings in `dashboard.html`) |
 | `MESSAGE_RETENTION_DAYS` | How long message history is kept (default 30) |
 | `REPLY_WITH_VOICE` | Send voice replies on WhatsApp for voice notes (default `false`) |
@@ -368,7 +370,8 @@ told never to state a time it can't derive from it, so it declines instead of gu
 - "Send my location" uses the device the dashboard is open on. A laptop's position is an estimate from Wi-Fi or IP and may be far off.
 - The wake word works only in Chrome or Edge, on HTTPS, with the tab open.
 - A single owner and a single password; no accounts, rate limits on assistant calls, or monitoring dashboards.
-- Transcription of Egyptian Arabic is good but not perfect, and the free voices sound more formal than a real Egyptian speaker.
+- Transcription is good but not perfect. Whisper handles Kenyan English better than Kiswahili, and heavy Sheng worse than either, so voice notes in deep slang are the least reliable input.
+- English and Kiswahili share the Latin script, so the voice picker and the dashboard assistant tell them apart by vocabulary (`app/lang.py`), not by characters. A Swahili message with no listed Swahili word in it is read as English.
 
 ## Roadmap
 

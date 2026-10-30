@@ -39,10 +39,11 @@ services:
       USER_NAME: ${USER_NAME:-}
       ASSISTANT_NAME: ${ASSISTANT_NAME:-Arianna}
       ASSISTANT_NICKNAMES: ${ASSISTANT_NICKNAMES:-Arie}
+      STT_LANGUAGE: ${STT_LANGUAGE:-en}
       WHISPER_MODEL_SIZE: ${WHISPER_MODEL_SIZE:-small}
       DASHBOARD_WHISPER_SIZE: ${DASHBOARD_WHISPER_SIZE:-small}
       TTS_PROVIDER: ${TTS_PROVIDER:-edge}
-      TZ: ${TZ:-Africa/Cairo}
+      TZ: ${TZ:-Africa/Nairobi}
     # Declared so Coolify's domain check can see the port uvicorn binds; the
     # port is reachable on the internal network either way, never published.
     expose:
@@ -70,7 +71,7 @@ services:
       ALLOWED_CONTACTS: ${ALLOWED_CONTACTS:?}
       ALLOW_GROUPS: ${ALLOW_GROUPS:-false}
       CONTACTS_FILE: /app/data/contacts.json
-      TZ: ${TZ:-Africa/Cairo}
+      TZ: ${TZ:-Africa/Nairobi}
     expose:
       - "3001"
     volumes:

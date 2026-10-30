@@ -47,6 +47,6 @@ def test_logout_clears_the_session(signed_in):
 
 
 def test_transcribe_validates_input(signed_in):
-    assert signed_in.post("/api/transcribe?lang=ar", content=b"abc").json() == {"text": "heard 3 bytes"}
+    assert signed_in.post("/api/transcribe?lang=sw", content=b"abc").json() == {"text": "heard 3 bytes"}
     assert signed_in.post("/api/transcribe?lang=fr", content=b"abc").status_code == 400
-    assert signed_in.post("/api/transcribe?lang=ar", content=b"").status_code == 400
+    assert signed_in.post("/api/transcribe?lang=sw", content=b"").status_code == 400

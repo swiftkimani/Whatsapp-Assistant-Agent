@@ -82,6 +82,35 @@ instead of OpenAI.
   defaulting to today's behaviour. They are what let the two containers share
   one `contacts.json` and reach each other across the compose network.
 
+## Done — localisation (2026-10-30)
+Rewrote the persona from Egyptian Arabic to Kenya: Kenyan English, Sheng and
+Kiswahili, replying in whichever the sender used and mirroring a code-switched
+mix rather than tidying it into one language.
+- `app/llm.py` — persona, language rules, flag examples, image hint. The
+  Arabic feminine-forms section is gone (neither English nor Kiswahili has
+  grammatical gender). The punctuation rule is unchanged — the stripper
+  already kept "?" and only removed `. , ، ! ; :`, and that casual
+  no-punctuation style carries over to Sheng and Swahili texting.
+- `app/lang.py` — now English/Kiswahili, plus `looks_swahili()`. This is the
+  real structural change: Arabic and English were told apart by **script**,
+  but Swahili and English share the Latin alphabet, so detection had to move
+  to vocabulary. Short ambiguous words ("na", "ya", "si") are deliberately
+  excluded — they occur in English text and would misroute it.
+- `app/tts.py` — `sw-KE-ZuriNeural` / `en-KE-AsiliaNeural` (verified against
+  `edge_tts.list_voices()`, not guessed), selected by vocabulary.
+- `app/assistant.py` — Arianna's canned replies are Swahili/English, and her
+  prompt no longer assumes the owner's gender.
+- `app/stt.py` — `STT_LANGUAGE`, default `en`.
+- Timezone is `Africa/Nairobi` via `TZ`, and `CAIRO`/`CAIRO_TZ` were renamed
+  `LOCAL_TZ`. **`app/llm.py` was telling the model "(Cairo time)" while
+  stamping the local clock** — the label is now derived from the zone so it
+  cannot drift again.
+- `evals/cases.jsonl` — all 32 cases rewritten, same categories and
+  expectations. The two name-only cases now use a `{USER_NAME}` placeholder
+  that `run_eval.py` substitutes, instead of a hardcoded name.
+- `data/style_examples.md` — Kenyan placeholders, still to be replaced with
+  real messages.
+
 ## Decisions
 - Model defaults to `claude-opus-5-5`, effort `medium`, both overridable via
   `ANTHROPIC_MODEL` / `ANTHROPIC_EFFORT` so the eval set can be used to tune
@@ -109,6 +138,16 @@ instead of OpenAI.
   isn't sure, while a placeholder would make it state something false.
 
 ## Known issues / deferred
+- **`USER_NAME` is still `Shahd`** in `.env`, inherited from the original
+  project. The assistant replies *as* this person and treats a bare mention of
+  the name as someone calling for attention, so it must be set to the real
+  owner's name before going live. Left rather than guessed.
+- Whisper handles Kenyan English better than Kiswahili and heavy Sheng worse
+  than either, so deep-slang voice notes are the least reliable input.
+- `looks_swahili()` is a word list. A Swahili message containing none of its
+  listed words is treated as English; it errs that way on purpose, because
+  misreading English costs intelligibility while missing Swahili only costs
+  an accent.
 - The eval set's five misses are all needless holds in the `schedule` and
   `knowledge` categories — "where are you now", "what do you do for work" —
   i.e. questions whose answers belong in the empty `about_me.md`. The replies

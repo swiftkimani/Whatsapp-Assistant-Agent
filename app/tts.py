@@ -8,24 +8,28 @@ import os
 import re
 import tempfile
 
+from app.lang import looks_swahili
 from app.log import log_event
 
-DEFAULT_VOICE = "en-US-AriaNeural"
+DEFAULT_VOICE = "en-KE-AsiliaNeural"
 MAX_SPEECH_CHARS = 500   # keeps a spoken reply short and fast to generate
 
-EGYPTIAN_STYLE = ("Speak in a natural, casual Egyptian Arabic accent (Cairo), like a friendly young woman chatting "
-                  "with a close friend. Relaxed, warm, conversational pace. If the text is English, speak clear natural English.")
-_ARABIC = re.compile(r"[\u0600-\u06FF]")
-_LATIN = re.compile(r"[A-Za-z]")
+KENYAN_STYLE = ("Speak in a natural, casual Kenyan accent (Nairobi), like a friendly young person chatting with "
+                "a close friend. Relaxed, warm, conversational pace. Handle English, Kiswahili and Sheng in the "
+                "same breath the way people here do, without switching to a British or American accent.")
 _EMOJI = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0F\u200d]")
 
 
 def pick_voice(text: str) -> str:
-    """Egyptian Arabic voice when the text is mostly Arabic letters, English otherwise.
-    Override with DASHBOARD_VOICE_AR / DASHBOARD_VOICE_EN (e.g. ar-EG-ShakirNeural for a male voice)."""
-    arabic = os.getenv("DASHBOARD_VOICE_AR", "ar-EG-SalmaNeural")
+    """Kiswahili voice when the text reads as Swahili or Sheng, Kenyan English otherwise.
+
+    Both languages use the Latin script, so this is a vocabulary judgement, not
+    a character count. Override with DASHBOARD_VOICE_SW / DASHBOARD_VOICE_EN
+    (e.g. en-KE-ChilembaNeural or sw-KE-RafikiNeural for male voices).
+    """
+    swahili = os.getenv("DASHBOARD_VOICE_SW", "sw-KE-ZuriNeural")
     english = os.getenv("DASHBOARD_VOICE_EN", DEFAULT_VOICE)
-    return arabic if len(_ARABIC.findall(text)) > len(_LATIN.findall(text)) else english
+    return swahili if looks_swahili(text) else english
 
 
 def clean_for_speech(text: str) -> str:
@@ -49,7 +53,7 @@ def _openai_speech(text: str) -> bytes:
         model=os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts"),
         voice=os.getenv("OPENAI_TTS_VOICE", "coral"),
         input=text,
-        instructions=os.getenv("OPENAI_TTS_STYLE", EGYPTIAN_STYLE),
+        instructions=os.getenv("OPENAI_TTS_STYLE", KENYAN_STYLE),
         response_format="mp3",
     )
     return resp.content
@@ -61,7 +65,7 @@ def provider() -> str:
 
 async def synthesize_bytes(text: str, voice: str | None = None) -> bytes:
     """MP3 bytes for the dashboard player. TTS_PROVIDER=openai uses an instructable
-    voice (Egyptian accent); if it fails the free edge voice is used instead."""
+    voice (Kenyan accent); if it fails the free edge voice is used instead."""
     import edge_tts
 
     text = clean_for_speech(text)
