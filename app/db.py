@@ -143,14 +143,16 @@ MODES = ("auto", "hold", "ignore")
 
 
 def default_mode() -> str:
-    """What someone you have not decided about yet gets.
+    """What someone you have not chosen gets.
 
-    "hold", so that choosing who may be answered automatically is something you
-    do on purpose, one person at a time, rather than something that happens to
-    everyone in your address book the moment you sync it.
+    "ignore": their message is dropped before the agent runs, so nobody's
+    conversation is transcribed, stored or sent to a model until you pick them.
+    Choosing who the assistant handles should be something you do on purpose,
+    one person at a time, not something that happens to a whole address book
+    the moment it is synced.
     """
-    mode = get_setting("default_contact_mode", "hold")
-    return mode if mode in MODES else "hold"
+    mode = get_setting("default_contact_mode", "ignore")
+    return mode if mode in MODES else "ignore"
 
 
 def set_default_mode(mode: str) -> None:

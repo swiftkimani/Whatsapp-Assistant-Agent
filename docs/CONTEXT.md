@@ -294,15 +294,16 @@ Two layers now, with different jobs:
   `contacts` means the address book, re-read per message so a sync applies at
   once. Fails closed both ways: an empty or unreadable book means nobody.
 - **Per-contact mode** is the choice, made on the Contacts tab. A new
-  `default_contact_mode` setting (default **hold**) decides what someone you
-  have not decided about gets, so syncing an address book does not enrol
-  everyone in it for automatic replies. The tab shows "3 of 214 set to reply
+  `default_contact_mode` setting (default **ignore**) decides what someone you
+  have not chosen gets. "ignore" drops the message before the agent runs, so
+  nobody's conversation is transcribed, stored or sent to a model until they
+  are picked — syncing an address book costs nothing and reveals nothing. The tab shows "3 of 214 set to reply
   automatically" and a picker for the default.
 
 Bug caught by the new tests: `set_mode()` deleted the row whenever the mode
 was literally `"auto"`, on the old assumption that auto was the default. With
-the default now `hold`, choosing "reply automatically" for one person was
-silently discarded — the one choice that matters. It compares against the
+a default that is no longer `auto`, choosing "reply automatically" for one
+person was silently discarded — the one choice that matters. It compares against the
 current default instead.
 
 ## Decisions

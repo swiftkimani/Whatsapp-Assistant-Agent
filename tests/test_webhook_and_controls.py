@@ -23,20 +23,26 @@ def agent(monkeypatch, fresh_db):
     return state
 
 
-def test_a_contact_you_have_not_decided_about_is_held_not_answered(client, agent, fresh_db):
-    """The opt-in rule: syncing an address book must not silently enrol
-    everyone in it for automatic replies."""
+def test_a_contact_you_have_not_chosen_is_left_alone_entirely(client, agent, fresh_db):
+    """The opt-in rule: syncing an address book must not enrol everyone in it.
+    "ignore" drops the message before the agent runs, so nothing is
+    transcribed, stored or sent to a model for someone never chosen."""
+    fresh_db.set_default_mode("ignore")
+    assert client.post("/webhook", json=msg(), headers=HEADERS).json() == {"action": "ignore"}
+
+
+def test_a_contact_set_to_ask_first_is_held_with_a_draft(client, agent, fresh_db):
     fresh_db.set_default_mode("hold")
     r = client.post("/webhook", json=msg(), headers=HEADERS).json()
     assert r["action"] == "hold" and r["reason"] == "contact_mode"
 
 
 def test_choosing_one_person_lets_only_that_person_through(signed_in, agent, fresh_db):
-    fresh_db.set_default_mode("hold")
+    fresh_db.set_default_mode("ignore")
     assert signed_in.post("/api/contact-modes", json={"name": "Mom", "mode": "auto"}).status_code == 200
     assert client_action(signed_in, msg()) == "send"
     other = msg(**{"from": "112257593794569@lid", "number": "112257593794569"})
-    assert client_action(signed_in, other) == "hold"
+    assert client_action(signed_in, other) == "ignore"
 
 
 def client_action(client, body):
@@ -129,7 +135,7 @@ def test_the_bare_domain_goes_to_the_dashboard(client):
 
 def test_the_default_mode_is_set_from_the_dashboard(signed_in, fresh_db, contacts_file):
     before = signed_in.get("/api/contact-modes").json()
-    assert before["default"] == "hold" and before["auto_count"] == 0
+    assert before["default"] == "ignore" and before["auto_count"] == 0
 
     after = signed_in.post("/api/default-mode", json={"mode": "auto"}).json()
     assert after["default"] == "auto"

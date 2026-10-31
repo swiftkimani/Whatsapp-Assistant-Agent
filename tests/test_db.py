@@ -24,16 +24,16 @@ def test_memory_keeps_only_the_last_messages_in_order(fresh_db):
 def test_contact_modes(fresh_db):
     """Someone you have not decided about is held, so syncing an address book
     does not enrol everyone in it for automatic replies."""
-    assert fresh_db.get_mode("Mom") == "hold" and fresh_db.get_mode(None) == "hold"
+    assert fresh_db.get_mode("Mom") == "ignore" and fresh_db.get_mode(None) == "ignore"
     fresh_db.set_mode("Mom", "auto")
     assert fresh_db.get_mode("mom") == "auto"          # case-insensitive
-    fresh_db.set_mode("Mom", "hold")
+    fresh_db.set_mode("Mom", "ignore")
     assert fresh_db.all_modes() == {}                  # back to the default: no row kept
 
 
 def test_changing_the_default_moves_everyone_not_decided_about(fresh_db):
     fresh_db.set_mode("Mom", "auto")
-    assert fresh_db.get_mode("Dad") == "hold" and fresh_db.get_mode("Mom") == "auto"
+    assert fresh_db.get_mode("Dad") == "ignore" and fresh_db.get_mode("Mom") == "auto"
     fresh_db.set_default_mode("auto")
     assert fresh_db.get_mode("Dad") == "auto"          # moved
     assert fresh_db.get_mode("Mom") == "auto"
@@ -51,7 +51,7 @@ def test_a_choice_matching_the_new_default_stops_being_stored(fresh_db):
 
 def test_an_unknown_default_falls_back_to_holding(fresh_db):
     fresh_db.set_setting("default_contact_mode", "nonsense")
-    assert fresh_db.default_mode() == "hold"
+    assert fresh_db.default_mode() == "ignore"
 
 
 def test_kill_switch_defaults_to_on(fresh_db):
