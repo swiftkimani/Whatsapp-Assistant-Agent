@@ -128,19 +128,41 @@ def set_mode(name: str, mode: str) -> None:
     if mode not in MODES:
         raise ValueError(f"bad mode: {mode}")
     with _db() as c:
-        if mode == "auto":
+        # A row is only stored for a choice that differs from the default, so
+        # changing the default moves everyone you have not decided about. It
+        # used to compare against "auto" literally, which silently discarded
+        # the one choice that mattered once the default became "hold".
+        if mode == default_mode():
             c.execute("DELETE FROM contact_modes WHERE name = ?", (name.strip().lower(),))
         else:
             c.execute("INSERT INTO contact_modes (name, mode) VALUES (?, ?) "
                       "ON CONFLICT(name) DO UPDATE SET mode = excluded.mode", (name.strip().lower(), mode))
 
 
+MODES = ("auto", "hold", "ignore")
+
+
+def default_mode() -> str:
+    """What someone you have not decided about yet gets.
+
+    "hold", so that choosing who may be answered automatically is something you
+    do on purpose, one person at a time, rather than something that happens to
+    everyone in your address book the moment you sync it.
+    """
+    mode = get_setting("default_contact_mode", "hold")
+    return mode if mode in MODES else "hold"
+
+
+def set_default_mode(mode: str) -> None:
+    set_setting("default_contact_mode", mode)
+
+
 def get_mode(name: str | None) -> str:
     if not name:
-        return "auto"
+        return default_mode()
     with _db() as c:
         row = c.execute("SELECT mode FROM contact_modes WHERE name = ?", (name.strip().lower(),)).fetchone()
-        return row["mode"] if row else "auto"
+        return row["mode"] if row else default_mode()
 
 
 def all_modes() -> dict[str, str]:

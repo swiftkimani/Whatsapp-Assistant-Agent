@@ -282,6 +282,29 @@ The gates all worked; what was missing was anything to reply *with*.
 `app/bridge.py` was extracted along the way: the dashboard and the agent both
 needed the bridge, from async and sync code respectively.
 
+## Done — choosing who gets answered (2026-10-31)
+Auto-reply could never have worked: `ALLOWED_CONTACTS` held one number — the
+owner's own — so every real sender was dropped at the bridge as
+`not_in_allowlist`, and the owner's own messages were dropped as `fromMe`.
+Three locks were closed at once (allowlist, `auto_reply` paused, empty notes)
+and only the last was visible from the dashboard.
+
+Two layers now, with different jobs:
+- **`ALLOWED_CONTACTS`** is the outer bound — who may reach the agent at all.
+  `contacts` means the address book, re-read per message so a sync applies at
+  once. Fails closed both ways: an empty or unreadable book means nobody.
+- **Per-contact mode** is the choice, made on the Contacts tab. A new
+  `default_contact_mode` setting (default **hold**) decides what someone you
+  have not decided about gets, so syncing an address book does not enrol
+  everyone in it for automatic replies. The tab shows "3 of 214 set to reply
+  automatically" and a picker for the default.
+
+Bug caught by the new tests: `set_mode()` deleted the row whenever the mode
+was literally `"auto"`, on the old assumption that auto was the default. With
+the default now `hold`, choosing "reply automatically" for one person was
+silently discarded — the one choice that matters. It compares against the
+current default instead.
+
 ## Decisions
 - ADR-0001 Multi-tenancy: a container per tenant, not a tenant column.
   **Proposed, not started** — the blocking question is RAM per tenant

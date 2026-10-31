@@ -73,6 +73,8 @@
          background:var(--card);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow)}
   .note{margin:0;color:var(--mute)}
   .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center} .filters select{flex:1;min-width:120px}
+  .defmode{display:flex;gap:6px;align-items:center;font-size:.88rem;color:var(--mute);white-space:nowrap}
+  .defmode select{padding:7px 10px}
   .wa-who{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:1.02rem}
   .wa-row{display:flex;gap:10px;align-items:center;width:100%;padding:9px 10px;border:1px solid var(--line);
           border-radius:16px;background:var(--card2);text-align:start;font:inherit;color:inherit}
@@ -312,6 +314,13 @@
   <section id="view-people" class="view" hidden>
     <div class="filters">
       <button id="syncContacts" class="ghost" type="button">Sync from WhatsApp</button>
+      <label class="defmode">Anyone not chosen:
+        <select id="defaultMode" aria-label="What a contact you have not chosen gets">
+          <option value="hold">Ask me first</option>
+          <option value="auto">Reply automatically</option>
+          <option value="ignore">Ignore</option>
+        </select>
+      </label>
       <p id="syncNote" class="note" role="status" aria-live="polite" dir="auto"></p>
     </div>
     <div id="peopleList" class="panel"></div>
@@ -939,7 +948,11 @@
   async function loadPeople() {
     const list = $("peopleList");
     try {
-      const { contacts } = await api("/api/contact-modes");
+      const { contacts, default: fallback, auto_count } = await api("/api/contact-modes");
+      $("defaultMode").value = fallback;
+      $("syncNote").textContent = contacts.length
+        ? `${auto_count} of ${contacts.length} set to reply automatically.`
+        : "";
       list.replaceChildren(...(contacts.length ? contacts.map((c) => {
         const row = el("div", "draft person");
         const label = el("span", "", c.name);
@@ -963,6 +976,16 @@
 
   // Copies the phone's address book into contacts.json, through the bridge.
   // Only ever adds, so a name you chose yourself is never overwritten.
+  // Everyone you have not chosen gets this. Kept as "Ask me first" by default,
+  // so syncing an address book does not enrol it for automatic replies.
+  $("defaultMode").onchange = async () => {
+    const select = $("defaultMode");
+    select.disabled = true;
+    try { await api("/api/default-mode", { mode: select.value }); }
+    catch (err) { $("syncNote").textContent = err.message; }
+    finally { select.disabled = false; loadPeople(); }
+  };
+
   $("syncContacts").onclick = async () => {
     const button = $("syncContacts"), status = $("syncNote"), label = button.textContent;
     button.disabled = true;

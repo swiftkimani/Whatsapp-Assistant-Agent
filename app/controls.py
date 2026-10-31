@@ -49,6 +49,10 @@ class ModeRequest(BaseModel):
     mode: Literal["auto", "hold", "ignore"]
 
 
+class DefaultModeRequest(BaseModel):
+    mode: Literal["auto", "hold", "ignore"]
+
+
 def _status() -> dict:
     return {"auto_reply": db.auto_reply_enabled(), "direct_send": db.direct_send_enabled(), "held": len(db.pending())}
 
@@ -87,8 +91,20 @@ def messages(contact: str = "", period: Literal["today", "yesterday", "last_7_da
 
 @router.get("/api/contact-modes", dependencies=AUTH)
 def list_modes():
-    modes = db.all_modes()
-    return {"contacts": [{"name": n, "mode": modes.get(n.lower(), "auto")} for n in contacts.names()]}
+    modes, fallback = db.all_modes(), db.default_mode()
+    people = [{"name": n, "mode": modes.get(n.lower(), fallback)} for n in contacts.names()]
+    return {"contacts": people, "default": fallback,
+            "auto_count": sum(1 for p in people if p["mode"] == "auto")}
+
+
+@router.post("/api/default-mode", dependencies=AUTH)
+def change_default_mode(body: DefaultModeRequest):
+    """What a contact you have not decided about yet gets. Changing this moves
+    everyone you have not set individually, so the count comes back with it."""
+    db.set_default_mode(body.mode)
+    db.log("default_mode_changed", body.mode)
+    log_event("default_mode_changed", mode=body.mode)
+    return list_modes()
 
 
 @router.post("/api/contact-modes", dependencies=AUTH)
