@@ -281,6 +281,9 @@ The gates all worked; what was missing was anything to reply *with*.
 needed the bridge, from async and sync code respectively.
 
 ## Decisions
+- ADR-0001 Multi-tenancy: a container per tenant, not a tenant column.
+  **Proposed, not started** — the blocking question is RAM per tenant
+  (Chromium cannot be pooled), which has to be measured first.
 - Model defaults to `claude-opus-5-5`, effort `medium`, both overridable via
   `ANTHROPIC_MODEL` / `ANTHROPIC_EFFORT` so the eval set can be used to tune
   them without code changes.
