@@ -184,6 +184,20 @@ cd whatsapp-bridge && npm start         # 2. then the bridge, and scan the QR co
 ```
 
 Open `http://localhost:8000/dashboard` (or your tunnel URL) and sign in with `DASHBOARD_PASSWORD`.
+
+### Your WhatsApp on the dashboard
+
+The **WhatsApp** tab lists your conversations and opens any of them, and on a screen wider than
+1024px it sits beside the assistant rather than replacing it. Messages appear as they arrive:
+the bridge tells the backend which conversation moved and the backend forwards that to the page
+over `/api/wa/stream`, so nothing is polled in the normal case. The notice carries only a chat id
+— the conversation itself is fetched over the same password-protected API as everything else.
+
+It reads the account linked to the **bridge**, which is a companion device of your phone, so it
+shows the same chats as web.whatsapp.com without touching your browser. Reading a thread here
+sends no read receipt, and nothing it shows is stored: the `Messages` tab holds what went through
+the agent, which is a different and much smaller set. You can reply to one person from here;
+replying to groups is switched off.
 Both programs must be running for auto-replies; listing stored messages and chatting with Arianna work with the backend alone.
 
 ## Configuration
@@ -272,9 +286,10 @@ app/
   stt.py, tts.py, vision.py, lang.py   Whisper, voices, BLIP, language choice
   style_retrieval.py, export_parser.py  tone retrieval from past chats
   contacts.py, log.py                   contacts.json lookup, structured logging
+  live.py            notices that a conversation changed, pushed to open dashboards
 whatsapp-bridge/     index.js (WhatsApp connection), bridge_api.js (local send API),
                      allowlist.js (who may reach the assistant), contacts_sync.js (address book -> contacts.json),
-                     *.test.js (node --test)
+                     wa_read.js (chats and threads for the dashboard), *.test.js (node --test)
 tests/               pytest suite
 evals/               evaluation cases and runner
 data/                kb/about_me.md, style_examples.md, database and logs (not committed)

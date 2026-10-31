@@ -9,7 +9,7 @@ from fastapi import FastAPI, Header, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
 
-from app import db
+from app import db, live
 from app.agent_graph import run_agent
 from app.approvals import router as approvals_router
 from app.assistant import router as assistant_router
@@ -59,13 +59,35 @@ class IncomingMessage(BaseModel):
     number: str | None = None    # phone number resolved by the bridge (for @lid contacts)
 
 
+def _require_bridge(token: str) -> None:
+    """Only the local bridge may call these. Without the check, anyone who can
+    reach the port (or a tunnel pointing at it) could drive the agent."""
+    expected = os.getenv("BRIDGE_API_TOKEN", "")
+    if not expected or not hmac.compare_digest(token.encode(), expected.encode()):
+        raise HTTPException(401, "unauthorized")
+
+
+class ChatEvent(BaseModel):
+    chat_id: str = Field(pattern=r"^\d+@(c\.us|lid|g\.us)$")
+
+
+@app.post("/wa-event")
+async def wa_event(event: ChatEvent, x_bridge_token: str = Header(default="")):
+    """The bridge saying a conversation just changed, so that open dashboards
+    can refresh at once instead of waiting for a poll.
+
+    Separate from /webhook on purpose. That one is the agent's path and is
+    gated by the allowlist; this one covers the owner's whole WhatsApp, and so
+    carries no message text at all — only which conversation moved.
+    """
+    _require_bridge(x_bridge_token)
+    live.publish(event.chat_id)
+    return {"status": "ok"}
+
+
 @app.post("/webhook")
 async def webhook(msg: IncomingMessage, x_bridge_token: str = Header(default="")):
-    # Only the local bridge may call this. Without it, anyone who can reach the
-    # port (or a tunnel pointing at it) could make the agent reply as you.
-    expected = os.getenv("BRIDGE_API_TOKEN", "")
-    if not expected or not hmac.compare_digest(x_bridge_token.encode(), expected.encode()):
-        raise HTTPException(401, "unauthorized")
+    _require_bridge(x_bridge_token)
 
     if not is_allowed(msg.from_, msg.number):
         return {"action": "ignore"}

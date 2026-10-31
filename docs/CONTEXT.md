@@ -12,7 +12,7 @@ instead of OpenAI.
 | Bridge deps | ✅ | installed with `PUPPETEER_SKIP_DOWNLOAD=true`, uses system Chrome |
 | Claude port | ✅ | `llm.py`, `assistant.py`, `tts.py` |
 | Backend boots | ✅ | `/health` 200, `/dashboard` 200, auth gates 401 |
-| Test suite | ✅ | 93 pytest + 22 `node --test` pass, 0 fail |
+| Test suite | ✅ | 119 pytest + 35 `node --test` pass, 0 fail |
 | Live model call | ✅ | real key in `.env`; replies, Arianna's tools and the blank-input guard all verified live |
 | Eval set run | ✅ | 27/32, **0 unsafe sends**; the 5 misses are the empty notes, see below |
 | WhatsApp linked | ⬜ | ready; needs `ALLOWED_CONTACTS` and one QR scan |
@@ -204,6 +204,45 @@ survived a sync that had her under her WhatsApp name, a non-contact was
 skipped, an `@lid` contact came through, a second sync produced an identical
 file, and an untokened request got 401.
 
+## Done — your WhatsApp on the dashboard (2026-10-31)
+A **WhatsApp** tab that lists the owner's conversations, opens any of them and
+replies to one person. Above 1024px it sits beside Arianna rather than
+replacing her, which is what was asked for: the chats and the assistant
+reading them, side by side.
+
+    pane  ──GET /api/wa/chats ─┐
+          ──GET /api/wa/thread─┼─> bridge /chats /thread -> client.getChats()
+          ──POST /api/wa/reply─┘                            chat.fetchMessages()
+
+**Live, not polled.** The bridge's `message_create` handler posts the chat id
+(and nothing else) to `POST /wa-event`; the backend fans that out over SSE on
+`GET /api/wa/stream`; the page refetches the affected conversation. Measured
+end to end against a stub: a message appended outside the browser appeared in
+the open thread with no interaction. A 60 s poll remains as a fallback for a
+proxy that buffers the stream.
+
+Deliberate properties, all of them load-bearing:
+- **`message_create`, not `message`** — so what the owner sends from their own
+  phone shows up here too.
+- **The notice carries no text.** Only a chat id crosses that wire, so the
+  server never holds anyone's words in memory on the way past, and the agent's
+  allowlisted path (`/webhook`) is untouched by it.
+- **Nothing read here is stored.** `message_log` stays what went through the
+  agent. The pane is a window, not a second copy of WhatsApp.
+- **No read receipts.** Opening a thread on the dashboard must not tell the
+  sender it was read, so `sendSeen` is never called.
+- **Replying widens one existing boundary, knowingly.** `/send-reply` used to
+  take its chat id only from the database. It now also takes one from the
+  browser, so the bridge checks it against WhatsApp itself: `getChatById` only
+  resolves a conversation that already exists, and groups are refused. With a
+  stolen session someone could answer people who have already written to the
+  owner — they could not start a conversation with a stranger.
+
+Bug found and fixed while verifying in a real browser: the `.pair` wrapper kept
+its flex share of the height even with both panes hidden, so Held, Messages,
+Activity and Contacts were squashed into the bottom half. `show()` now hides
+the wrapper itself.
+
 ## Decisions
 - Model defaults to `claude-opus-5-5`, effort `medium`, both overridable via
   `ANTHROPIC_MODEL` / `ANTHROPIC_EFFORT` so the eval set can be used to tune
@@ -274,6 +313,12 @@ per-contact modes — has to be set again per deployment.
 - A large address book makes a long Contacts tab and a long contact filter in
   Messages: both are flat lists with no search. `CONTACTS_SYNC_LIMIT` keeps it
   bounded; a search box is the fix if it starts to grate.
+- The live stream is in-process (`app/live.py`), so it covers one uvicorn
+  worker. The deployment runs exactly one; a second would need a shared bus
+  and dashboards would see only the events their own worker received.
+- The WhatsApp pane reads through puppeteer, so a chat list or thread costs
+  real work in the bridge's browser. Hence the 700 ms coalesce, the one-at-a-
+  time guard, and the badge-only refresh while the pane is closed.
 - Contact sync never *removes*. Someone deleted from the phone stays a valid
   recipient until the entry is deleted from `contacts.json` by hand. That is
   deliberate — a sync that could delete could also delete a name typed in by

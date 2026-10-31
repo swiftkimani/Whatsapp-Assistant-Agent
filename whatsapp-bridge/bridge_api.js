@@ -7,12 +7,13 @@ const http = require("http");
 const path = require("path");
 const { Location } = require("whatsapp-web.js");
 const { mergeContacts, DEFAULT_LIMIT } = require("./contacts_sync");
+const { shapeChats, shapeMessages, CHAT_ID, DEFAULT_CHATS, DEFAULT_MESSAGES } = require("./wa_read");
 
 // Project root by default; CONTACTS_FILE moves it so the backend and the bridge
 // can share one copy when they run as separate containers.
 const CONTACTS_FILE = process.env.CONTACTS_FILE
   || path.resolve(__dirname, "..", "contacts.json");
-const ROUTES = ["/send-text", "/send-location", "/send-reply", "/sync-contacts"];
+const ROUTES = ["/send-text", "/send-location", "/send-reply", "/sync-contacts", "/chats", "/thread"];
 let started = false; // "ready" can fire again after a reconnect
 
 // Re-read on every request so edits to contacts.json apply without a restart.
@@ -73,13 +74,43 @@ function startBridgeApi(client) {
       try {
         const data = body ? JSON.parse(body) : {};   // /sync-contacts needs no body
 
+        // ---- reading the owner's own chats, for the dashboard's WhatsApp pane ----
+        // Neither route marks anything as seen: opening a thread on the
+        // dashboard must not send a read receipt to the other person.
+        if (req.url === "/chats") {
+          const limit = Math.min(Number(data.limit) || DEFAULT_CHATS, 100);
+          const chats = shapeChats(await client.getChats(), { limit });
+          console.log(`[read] /chats returned=${chats.length}`);   // no names, numbers or text
+          return reply(200, { chats });
+        }
+
+        if (req.url === "/thread") {
+          const chatId = String(data.chat_id || "");
+          if (!CHAT_ID.test(chatId)) return reply(400, { error: "bad chat id" });
+          const limit = Math.min(Number(data.limit) || DEFAULT_MESSAGES, 100);
+          const chat = await client.getChatById(chatId);
+          if (!chat) return reply(404, { error: "no such chat" });
+          const messages = shapeMessages(await chat.fetchMessages({ limit }), { limit });
+          console.log(`[read] /thread returned=${messages.length}`);
+          return reply(200, {
+            chat: { id: chatId, name: shapeChats([chat], { limit: 1 })[0].name, is_group: Boolean(chat.isGroup) },
+            messages,
+          });
+        }
+
         if (req.url === "/send-reply") {
-          // Reply to someone who messaged us. The backend takes chat_id from its own
-          // database, never from the browser, and group chats are refused here.
+          // Reply into an existing conversation. Two callers: approving a held
+          // reply, where the backend reads chat_id from its own database, and
+          // the dashboard's WhatsApp pane, where it comes from the browser.
+          // So the id is checked against WhatsApp itself rather than trusted —
+          // getChatById only resolves a conversation that already exists, which
+          // keeps a stolen session from starting one with a stranger. Group
+          // chats are refused outright.
           const chatId = String(data.chat_id || "");
           const text = String(data.text || "").trim();
           if (!/^\d+@(c\.us|lid)$/.test(chatId)) return reply(400, { error: "bad chat id" });
           if (!text || text.length > 4000) return reply(400, { error: "bad text" });
+          if (!(await client.getChatById(chatId))) return reply(404, { error: "no such chat" });
           await client.sendMessage(chatId, text);
           console.log("[send] /send-reply");
           return reply(200, { status: "sent" });

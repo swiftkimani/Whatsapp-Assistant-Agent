@@ -1,0 +1,119 @@
+const test = require("node:test");
+const assert = require("node:assert");
+const { shapeChats, shapeMessages } = require("./wa_read");
+
+const chat = (over = {}) => ({
+  id: { _serialized: "254712345678@c.us" },
+  name: "Jane",
+  isGroup: false,
+  unreadCount: 0,
+  timestamp: 1000,
+  lastMessage: { body: "niaje", fromMe: false, timestamp: 1200, type: "chat", hasMedia: false },
+  ...over,
+});
+
+const message = (over = {}) => ({
+  id: { _serialized: "false_254712345678@c.us_ABC" },
+  timestamp: 100, fromMe: false, body: "niaje", type: "chat", hasMedia: false, author: "",
+  ...over,
+});
+
+test("a chat is reduced to what the dashboard shows", () => {
+  assert.deepStrictEqual(shapeChats([chat({ unreadCount: 3 })]), [{
+    id: "254712345678@c.us", name: "Jane", is_group: false,
+    unread: 3, ts: 1200, preview: "niaje", from_me: false,
+  }]);
+});
+
+test("status updates, channels and broadcast lists are not conversations", () => {
+  const out = shapeChats([
+    chat({ id: { _serialized: "status@broadcast" } }),
+    chat({ id: { _serialized: "120363000000000000@newsletter" } }),
+    chat({ id: { _serialized: "1234567890@broadcast" } }),
+    chat({ id: { _serialized: "254700000000-123456@g.us" } }),   // malformed group id
+    chat({ id: { _serialized: "254712345678@c.us" } }),
+  ]);
+  assert.deepStrictEqual(out.map((c) => c.id), ["254712345678@c.us"]);
+});
+
+test("groups and privacy-id chats are kept", () => {
+  const out = shapeChats([
+    chat({ id: { _serialized: "254700000000@g.us" }, isGroup: true, name: "Fam" }),
+    chat({ id: { _serialized: "112257593794569@lid" }, name: "Lulu" }),
+  ]);
+  assert.deepStrictEqual(out.map((c) => [c.name, c.is_group]), [["Fam", true], ["Lulu", false]]);
+});
+
+test("the most recently active chat comes first, and the list is capped", () => {
+  const out = shapeChats([
+    chat({ id: { _serialized: "1@c.us" }, lastMessage: { timestamp: 50, body: "old" } }),
+    chat({ id: { _serialized: "2@c.us" }, lastMessage: { timestamp: 900, body: "new" } }),
+    chat({ id: { _serialized: "3@c.us" }, lastMessage: { timestamp: 500, body: "mid" } }),
+  ], { limit: 2 });
+  assert.deepStrictEqual(out.map((c) => c.id), ["2@c.us", "3@c.us"]);
+});
+
+test("a chat with no name falls back to the number, and a privacy id to Unknown", () => {
+  const out = shapeChats([
+    chat({ name: "", id: { _serialized: "254712345678@c.us" } }),
+    chat({ name: undefined, id: { _serialized: "112257593794569@lid" } }),
+  ]);
+  assert.deepStrictEqual(out.map((c) => c.name).sort(), ["254712345678", "Unknown"]);
+});
+
+test("an attachment with no caption is described instead of showing blank", () => {
+  const out = shapeChats([
+    chat({ lastMessage: { body: "", hasMedia: true, type: "ptt", timestamp: 9 } }),
+    chat({ id: { _serialized: "2@c.us" }, lastMessage: { body: "look", hasMedia: true, type: "image", timestamp: 8 } }),
+  ]);
+  assert.strictEqual(out[0].preview, "Voice note");
+  assert.strictEqual(out[1].preview, "look");   // a caption is better than "Photo"
+});
+
+test("a chat that has never had a message still sorts and renders", () => {
+  const out = shapeChats([chat({ lastMessage: undefined, timestamp: 77 })]);
+  assert.deepStrictEqual([out[0].ts, out[0].preview], [77, ""]);
+});
+
+test("a long preview is cut to one line", () => {
+  const out = shapeChats([chat({ lastMessage: { body: `x${"y".repeat(400)}\nz`, timestamp: 5 } })]);
+  assert.ok(out[0].preview.length <= 90 && out[0].preview.endsWith("…"));
+  assert.ok(!out[0].preview.includes("\n"));
+});
+
+test("a thread reads downwards, oldest first", () => {
+  const out = shapeMessages([
+    message({ timestamp: 300, body: "third" }),
+    message({ timestamp: 100, body: "first" }),
+    message({ timestamp: 200, body: "second" }),
+  ]);
+  assert.deepStrictEqual(out.map((m) => m.body), ["first", "second", "third"]);
+});
+
+test("a capped thread keeps the newest messages, not the oldest", () => {
+  const many = Array.from({ length: 10 }, (_, i) => message({ timestamp: i, body: `m${i}` }));
+  const out = shapeMessages(many, { limit: 3 });
+  assert.deepStrictEqual(out.map((m) => m.body), ["m7", "m8", "m9"]);
+});
+
+test("who sent it survives, and a device suffix is dropped from a group author", () => {
+  const out = shapeMessages([
+    message({ fromMe: true, body: "mine" }),
+    message({ author: "254722000111:12@c.us", body: "theirs", timestamp: 200 }),
+  ]);
+  assert.deepStrictEqual(out.map((m) => [m.from_me, m.author]), [[true, ""], [false, "254722000111"]]);
+});
+
+test("a voice note shows as one, with its caption when it has one", () => {
+  const out = shapeMessages([
+    message({ hasMedia: true, type: "ptt", body: "" }),
+    message({ hasMedia: true, type: "image", body: "at the shop", timestamp: 200 }),
+  ]);
+  assert.deepStrictEqual(out.map((m) => [m.kind, m.body]), [["Voice note", ""], ["Photo", "at the shop"]]);
+});
+
+test("nothing to show is not an error", () => {
+  assert.deepStrictEqual(shapeChats(undefined), []);
+  assert.deepStrictEqual(shapeChats([null, {}]), []);
+  assert.deepStrictEqual(shapeMessages(null), []);
+});

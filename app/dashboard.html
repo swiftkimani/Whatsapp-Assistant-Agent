@@ -54,15 +54,33 @@
                box-shadow:0 6px 16px color-mix(in srgb,var(--c) 40%,transparent)}
   .tabs button[aria-selected="true"] svg{color:#fff}
   #tab-held{--c:var(--a5)} #tab-messages{--c:var(--a4)} #tab-activity{--c:var(--a2)} #tab-people{--c:var(--a3)}
+  #tab-whatsapp{--c:var(--ok)}
   .badge{padding:1px 7px;border-radius:999px;background:linear-gradient(135deg,var(--a5),var(--bad));color:#fff;font-size:.75rem}
   @media (max-width:560px){.tabs .lbl{display:none}.tabs [aria-selected="true"] .lbl{display:inline}}
 
   /* views */
   .view{flex:1;min-height:0;display:flex;flex-direction:column;gap:12px}
+  /* Arianna and WhatsApp are siblings so that one wide screen can hold both.
+     Below the breakpoint the tabs pick one and the other is simply hidden. */
+  .pair{flex:1;min-height:0;display:flex;gap:12px}
+  .pair > .view{min-width:0}
+  @media (min-width:1024px){ #app[data-split="on"]{max-width:1240px} }
   .panel{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:14px;
          background:var(--card);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow)}
   .note{margin:0;color:var(--mute)}
   .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center} .filters select{flex:1;min-width:120px}
+  .wa-who{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:1.02rem}
+  .wa-row{display:flex;gap:10px;align-items:center;width:100%;padding:9px 10px;border:1px solid var(--line);
+          border-radius:16px;background:var(--card2);text-align:start;font:inherit;color:inherit}
+  .wa-row:hover{border-color:color-mix(in srgb,var(--a1) 45%,var(--line))}
+  .wa-row[aria-current="true"]{border-color:var(--a1);background:color-mix(in srgb,var(--a1) 10%,var(--card))}
+  .wa-main{min-width:0;flex:1}
+  .wa-name{display:block;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .wa-prev{display:block;color:var(--mute);font-size:.86rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .wa-side{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:none}
+  .wa-when{color:var(--mute);font-size:.76rem;white-space:nowrap}
+  .wa-kind{display:block;font-size:.78rem;font-weight:700;opacity:.8;margin-bottom:2px}
+  .msg time{display:block;margin-top:4px;font-size:.72rem;opacity:.62}
   .filters .note{flex:1;min-width:140px;font-size:.88rem}
 
   /* chat */
@@ -119,11 +137,11 @@
           border:1px solid color-mix(in srgb,var(--a1) 40%,var(--line));background:transparent}
 
   /* composer */
-  #composer{display:flex;gap:8px;align-items:center;padding:8px;background:var(--card);border:1px solid var(--line);border-radius:999px;
+  #composer,#waReply{display:flex;gap:8px;align-items:center;padding:8px;background:var(--card);border:1px solid var(--line);border-radius:999px;
             box-shadow:var(--shadow);transition:box-shadow .2s,border-color .2s}
-  #composer:focus-within{border-color:var(--a1);box-shadow:0 0 0 4px color-mix(in srgb,var(--a1) 18%,transparent),var(--shadow)}
-  #text{flex:1;min-width:0;border:0;background:transparent;padding:10px 12px}
-  #text:focus-visible{outline:none}
+  #composer:focus-within,#waReply:focus-within{border-color:var(--a1);box-shadow:0 0 0 4px color-mix(in srgb,var(--a1) 18%,transparent),var(--shadow)}
+  #text,#waText{flex:1;min-width:0;border:0;background:transparent;padding:10px 12px}
+  #text:focus-visible,#waText:focus-visible{outline:none}
   .round{width:44px;height:44px;padding:0;border-radius:50%;display:grid;place-items:center;border:1px solid var(--line);background:var(--card2)}
   .round.go{border:0;background:var(--grad);color:#fff}
   #mic{color:var(--a4);border-color:color-mix(in srgb,var(--a4) 45%,var(--line));background:color-mix(in srgb,var(--a4) 10%,var(--card))}
@@ -203,12 +221,14 @@
 
   <nav class="tabs" role="tablist" aria-label="Sections">
     <button id="tab-chat" data-tab="chat" role="tab" aria-selected="true"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.7 7L4 20l1.1-4.8A8 8 0 1 1 21 12z"/></svg><span class="lbl">Chat</span></button>
+    <button id="tab-whatsapp" data-tab="whatsapp" role="tab" aria-selected="false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.1 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg><span class="lbl">WhatsApp</span><span id="waUnread" class="badge" hidden></span></button>
     <button id="tab-held" data-tab="held" role="tab" aria-selected="false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="lbl">Held</span><span id="heldCount" class="badge" hidden></span></button>
     <button id="tab-messages" data-tab="messages" role="tab" aria-selected="false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg><span class="lbl">Messages</span></button>
     <button id="tab-activity" data-tab="activity" role="tab" aria-selected="false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span class="lbl">Activity</span></button>
     <button id="tab-people" data-tab="people" role="tab" aria-selected="false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14.2a6.5 6.5 0 0 1 3.5 5.8"/></svg><span class="lbl">Contacts</span></button>
   </nav>
 
+  <div id="pair" class="pair">
   <section id="view-chat" class="view">
     <div id="log" class="panel" aria-live="polite">
       <div id="empty" class="empty">
@@ -227,6 +247,22 @@
       </button>
     </form>
   </section>
+
+  <section id="view-whatsapp" class="view" hidden>
+    <div class="filters">
+      <button id="waBack" class="ghost" type="button" hidden>&larr; Chats</button>
+      <strong id="waWho" class="wa-who" dir="auto">Your WhatsApp</strong>
+      <button id="waRefresh" class="ghost" type="button">Refresh</button>
+    </div>
+    <div id="waPanel" class="panel" aria-live="polite"></div>
+    <form id="waReply" hidden>
+      <input id="waText" dir="auto" placeholder="Reply as yourself…" aria-label="Reply as yourself" autocomplete="off">
+      <button class="round go" type="submit" aria-label="Send to this chat" title="Send">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </button>
+    </form>
+  </section>
+  </div>
 
   <section id="view-held" class="view" hidden><div id="heldList" class="panel"></div></section>
 
@@ -286,6 +322,7 @@
   // ---- auth: the server sets an HttpOnly cookie; this page never sees the password ----
   function showGate() {
     stopWake();
+    stopWaStream();
     app.hidden = true;
     gate.hidden = false;
     $("password").value = "";
@@ -296,6 +333,8 @@
   function showApp() {
     gate.hidden = true;
     app.hidden = false;
+    show(currentView);        // lays out the panes, and fills whichever are visible
+    startWaStream();
     loadStatus();
     loadContacts();
     refreshHeld();
@@ -354,18 +393,32 @@
   fetch("/api/session").then((r) => (r.ok ? showApp() : showGate())).catch(showGate);
 
   // ---- tabs ----
-  const VIEWS = ["chat", "held", "messages", "activity", "people"];
+  const VIEWS = ["chat", "whatsapp", "held", "messages", "activity", "people"];
+  // On a wide screen these two are shown together, which is the whole point of
+  // the WhatsApp pane: your conversations next to the assistant reading them.
+  const PAIRED = ["chat", "whatsapp"];
+  const roomForBoth = window.matchMedia("(min-width:1024px)");
+  let currentView = "chat";
+
   function show(name) {
+    currentView = name;
+    const split = roomForBoth.matches && PAIRED.includes(name);
+    app.dataset.split = split ? "on" : "off";
+    // The wrapper holds a flex share of the height even when both panes inside
+    // it are hidden, which would squash whichever view is actually showing.
+    $("pair").hidden = !PAIRED.includes(name);
     for (const v of VIEWS) {
-      $("view-" + v).hidden = v !== name;
+      $("view-" + v).hidden = split ? !PAIRED.includes(v) : v !== name;
       $("tab-" + v).setAttribute("aria-selected", String(v === name));
     }
     if (name === "held") refreshHeld(true);
     if (name === "messages") loadMessages();
     if (name === "activity") loadActivity();
     if (name === "people") loadPeople();
+    if (!$("view-whatsapp").hidden) loadWa(true);
   }
   document.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => show(b.dataset.tab)));
+  roomForBoth.addEventListener("change", () => show(currentView));
 
   // ---- status chips (the two switches) ----
   const autoBtn = $("autoBtn"), directBtn = $("directBtn");
@@ -892,6 +945,177 @@
       button.textContent = label;
     }
   };
+
+  // ---- your own WhatsApp: read the threads, answer as yourself ----
+  // The bridge only reads: nothing here is stored, and opening a thread sends
+  // no read receipt, so looking at a message does not tell the sender you did.
+  // Updates arrive live over /api/wa/stream. The timings below are the safety
+  // net for when that stream cannot get through — a proxy that buffers it, a
+  // sleeping laptop — not the normal path.
+  const WA_FALLBACK = 60000;     // slow poll while the pane is on screen
+  const WA_COALESCE = 700;       // a burst of messages costs one refresh
+  const WA_BACKGROUND = 30000;   // how often the unread badge refreshes when the pane is closed
+  let waChat = null, waBusy = false;
+
+  const waOpen = () => !app.hidden && !$("view-whatsapp").hidden;
+  const when = (ts) => {
+    const d = new Date(ts * 1000);
+    return new Date().toDateString() === d.toDateString()
+      ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : d.toLocaleDateString();
+  };
+  const groupSuffix = (c) => (c.is_group ? " · group" : "");
+
+  function waChatRow(c) {
+    const row = btn("", "wa-row");
+    const main = el("div", "wa-main");
+    const name = el("span", "wa-name", c.name + groupSuffix(c));
+    const preview = el("span", "wa-prev", (c.from_me ? "You: " : "") + (c.preview || "—"));
+    name.dir = preview.dir = "auto";
+    main.append(name, preview);
+    const side = el("div", "wa-side");
+    side.append(el("span", "wa-when", c.ts ? when(c.ts) : ""));
+    if (c.unread) side.append(el("span", "badge", String(c.unread)));
+    row.append(avatar(c.name), main, side);
+    row.setAttribute("aria-current", String(c.id === waChat));
+    row.onclick = () => openWa(c.id, c.name);
+    return row;
+  }
+
+  function waBubble(m) {
+    const bubble = el("div", `msg ${m.from_me ? "me" : "bot"}`);
+    if (m.kind) bubble.append(el("strong", "wa-kind", m.kind));
+    if (m.body) {
+      const body = el("div", "", m.body);
+      body.dir = "auto";
+      bubble.append(body);
+    } else if (!m.kind) {
+      bubble.append(el("em", "", "(no text)"));
+    }
+    const stamp = el("time", "", when(m.ts));
+    stamp.dateTime = new Date(m.ts * 1000).toISOString();
+    bubble.append(stamp);
+    return bubble;
+  }
+
+  async function loadWaChats() {
+    try {
+      const { chats } = await api("/api/wa/chats?limit=25");
+      const unread = chats.reduce((n, c) => n + c.unread, 0);
+      const badge = $("waUnread");
+      badge.textContent = unread > 99 ? "99+" : String(unread);
+      badge.hidden = !unread;
+      $("waPanel").replaceChildren(...(chats.length
+        ? chats.map(waChatRow)
+        : [note("No conversations yet. Once someone messages you they show up here.")]));
+    } catch (err) { $("waPanel").replaceChildren(note(err.message)); }
+  }
+
+  async function loadWaThread(toBottom) {
+    if (!waChat) return;
+    const panel = $("waPanel");
+    // A refresh must not yank the view away from whatever is being read.
+    const wasAtBottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight < 40;
+    const keep = panel.scrollTop;
+    try {
+      const { chat, messages } = await api(
+        `/api/wa/thread?chat_id=${encodeURIComponent(waChat)}&limit=50`);
+      $("waWho").textContent = chat.name + groupSuffix(chat);
+      panel.replaceChildren(...(messages.length ? messages.map(waBubble) : [note("Nothing here yet.")]));
+      // The bridge refuses to send into a group, so do not offer a box that cannot.
+      $("waReply").hidden = chat.is_group;
+      if (chat.is_group) panel.append(note("Replying to groups from here is switched off."));
+      panel.scrollTop = toBottom || wasAtBottom ? panel.scrollHeight : keep;
+    } catch (err) { panel.replaceChildren(note(err.message)); }
+  }
+
+  async function loadWa(toBottom) {
+    if (waBusy) return;          // reading drives the browser session; one at a time
+    waBusy = true;
+    try { await (waChat ? loadWaThread(toBottom) : loadWaChats()); }
+    finally { waBusy = false; }
+  }
+
+  function openWa(id, name) {
+    waChat = id;
+    $("waWho").textContent = name;
+    $("waBack").hidden = false;
+    $("waPanel").replaceChildren(note("Opening…"));
+    loadWa(true);
+  }
+
+  $("waBack").onclick = () => {
+    waChat = null;
+    $("waBack").hidden = true;
+    $("waReply").hidden = true;
+    $("waWho").textContent = "Your WhatsApp";
+    loadWa();
+  };
+  $("waRefresh").onclick = () => loadWa();
+
+  // ---- live: the bridge nudges the backend, the backend nudges this page ----
+  // The nudge is only a chat id, so the conversation itself still comes from
+  // the authenticated endpoints above.
+  let waStream = null, waNudge = null, waOpenMoved = false, waBadgeAt = 0;
+
+  function waActivity(chatId) {
+    if (!chatId || chatId === waChat) waOpenMoved = true;
+    clearTimeout(waNudge);
+    waNudge = setTimeout(() => {
+      const openMoved = waOpenMoved;
+      waOpenMoved = false;
+      if (!waOpen()) {
+        // Closed pane: keep the unread badge roughly honest, cheaply.
+        if (Date.now() - waBadgeAt > WA_BACKGROUND) { waBadgeAt = Date.now(); loadWaChats(); }
+        return;
+      }
+      if (waChat && !openMoved) return;    // the movement was in another conversation
+      loadWa();
+    }, WA_COALESCE);
+  }
+
+  function startWaStream() {
+    if (waStream || app.hidden) return;
+    waStream = new EventSource("/api/wa/stream");
+    waStream.addEventListener("activity", (e) => {
+      let chatId = "";
+      try { chatId = JSON.parse(e.data).chat_id; } catch { /* a malformed line is not worth a crash */ }
+      waActivity(chatId);
+    });
+    // EventSource reconnects on its own; this is for the case where it cannot,
+    // so the page is not left silently stale.
+    waStream.onerror = () => {
+      if (waStream && waStream.readyState === EventSource.CLOSED) {
+        waStream = null;
+        setTimeout(startWaStream, 10000);
+      }
+    };
+  }
+  function stopWaStream() {
+    if (waStream) { waStream.close(); waStream = null; }
+    clearTimeout(waNudge);
+  }
+
+  setInterval(() => { if (waOpen() && document.visibilityState === "visible") loadWa(); }, WA_FALLBACK);
+
+  $("waReply").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const box = $("waText"), text = box.value.trim();
+    if (!text || !waChat) return;
+    const submit = e.submitter || $("waReply").querySelector("button");
+    submit.disabled = true;
+    try {
+      await api("/api/wa/reply", { chat_id: waChat, text });
+      box.value = "";
+      await loadWaThread(true);
+    } catch (err) {
+      $("waPanel").append(note(err.message));
+      $("waPanel").scrollTop = $("waPanel").scrollHeight;
+    } finally {
+      submit.disabled = false;
+      box.focus();
+    }
+  });
 
   // ---- dictation: record, transcribe on the server (Whisper) ----
   const micBtn = $("mic"), langBtn = $("lang");

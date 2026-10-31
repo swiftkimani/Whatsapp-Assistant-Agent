@@ -11,6 +11,7 @@ or stored in the browser. Changing it in .env signs every device out.
 Env vars are read when a request arrives (not at import time) because main.py
 calls load_dotenv() late.
 """
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -22,13 +23,13 @@ from pathlib import Path
 import httpx
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app import contacts as contacts_store
-from app import db
+from app import db, live
 from app.log import log_event
 from app.stt import transcribe_bytes
 from app.tts import synthesize_bytes
@@ -48,6 +49,7 @@ MAX_AUDIO_BYTES = 10 * 1024 * 1024
 # you have already left.
 PHONE_FIX_MAX_AGE = 300  # seconds
 SYNC_COOLDOWN = 60       # seconds between contact syncs
+STREAM_KEEPALIVE = 25    # seconds of quiet before the live stream says it is still there
 
 _last_send: dict[str, float] = {}
 _failed_logins: dict[str, list[float]] = {}
@@ -326,6 +328,97 @@ async def send_location(body: LocationRequest):
     payload = {"contact": body.contact, "latitude": fix["lat"],
                "longitude": fix["lon"], "accuracy": fix.get("acc")}
     return await _send("location", "/send-location", payload, cooldown=20)
+
+
+# ------------------------------------------- the owner's own WhatsApp ----
+# Read-only, and deliberately not stored: `message_log` holds what went through
+# the agent, while these are the owner's whole WhatsApp passing through on its
+# way to their own screen. Opening a thread here sends no read receipt either.
+
+DIRECT_CHAT_ID = r"^\d+@(c\.us|lid)$"          # one person
+ANY_CHAT_ID = r"^\d+@(c\.us|lid|g\.us)$"       # or a group
+
+
+class ReplyRequest(BaseModel):
+    chat_id: str = Field(pattern=DIRECT_CHAT_ID)
+    text: str = Field(min_length=1, max_length=4000)
+
+
+async def _bridge_read(path: str, payload: dict, timeout: float) -> dict:
+    r = await _bridge_post(path, payload, timeout=timeout)
+    if r.status_code == 404:
+        raise HTTPException(404, "That conversation is not on WhatsApp any more.")
+    if r.status_code != 200:
+        raise HTTPException(502, f"The bridge could not read WhatsApp ({r.status_code}): {r.text[:120]}")
+    return r.json()
+
+
+@router.get("/api/wa/chats", dependencies=[Depends(require_auth)])
+async def wa_chats(limit: int = Query(25, ge=1, le=100)):
+    """Recent conversations, most recently active first."""
+    return await _bridge_read("/chats", {"limit": limit}, timeout=60)
+
+
+@router.get("/api/wa/thread", dependencies=[Depends(require_auth)])
+async def wa_thread(chat_id: str = Query(pattern=ANY_CHAT_ID), limit: int = Query(50, ge=1, le=100)):
+    """One conversation, oldest message first."""
+    return await _bridge_read("/thread", {"chat_id": chat_id, "limit": limit}, timeout=90)
+
+
+@router.get("/api/wa/stream", dependencies=[Depends(require_auth)])
+async def wa_stream(request: Request):
+    """Server-sent events: one line each time a conversation changes.
+
+    The pane follows WhatsApp as it happens rather than polling. Only the chat
+    id is sent; the page then fetches that conversation through the endpoints
+    above, so nothing bypasses the password.
+    """
+    queue = live.subscribe()
+
+    async def notices():
+        try:
+            yield "retry: 3000\n\n"
+            while not await request.is_disconnected():
+                try:
+                    chat_id = await asyncio.wait_for(queue.get(), timeout=STREAM_KEEPALIVE)
+                except TimeoutError:
+                    yield ": still here\n\n"   # stops a proxy closing an idle stream
+                    continue
+                yield f"event: activity\ndata: {json.dumps({'chat_id': chat_id})}\n\n"
+        finally:
+            live.unsubscribe(queue)
+
+    return StreamingResponse(notices(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-store",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",   # nginx and friends must not buffer a stream
+    })
+
+
+@router.post("/api/wa/reply", dependencies=[Depends(require_auth)])
+async def wa_reply(body: ReplyRequest):
+    """Send a message as yourself, into a conversation that already exists.
+
+    This is the one place where a chat id comes from the browser rather than
+    from the database, so the bridge checks it against WhatsApp itself: only an
+    existing conversation resolves, and groups are refused. Replying is not
+    limited to contacts.json — the point of the pane is to answer whoever has
+    written to you — so it is the dashboard password that stands between a
+    stranger and your WhatsApp.
+    """
+    if time.time() - _last_send.get("reply", 0.0) < 2:
+        raise HTTPException(429, "Just sent one. Wait a moment.")
+
+    r = await _bridge_post("/send-reply", body.model_dump(), timeout=30)
+    if r.status_code == 404:
+        raise HTTPException(404, "That conversation is not on WhatsApp any more.")
+    if r.status_code != 200:
+        raise HTTPException(502, f"The bridge could not send it ({r.status_code}): {r.text[:120]}")
+
+    _last_send["reply"] = time.time()
+    db.log_message(body.chat_id, contacts_store.name_for(body.chat_id), "out", body.text, "dashboard")
+    log_event("dashboard_reply")   # no text, name or number
+    return {"status": "sent"}
 
 
 @router.post("/api/transcribe", dependencies=[Depends(require_auth)])

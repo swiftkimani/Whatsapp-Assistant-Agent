@@ -30,6 +30,9 @@ function anon(id) {
 }
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000/webhook";
+// Where to say "this conversation moved". Same host as the webhook, so it
+// follows BACKEND_URL without a second thing to configure.
+const ACTIVITY_URL = process.env.ACTIVITY_URL || BACKEND_URL.replace(/\/webhook$/, "/wa-event");
 const ALLOW_GROUPS = (process.env.ALLOW_GROUPS || "false").toLowerCase() === "true";
 const ALLOWED_CONTACTS = (process.env.ALLOWED_CONTACTS || "")
   .split(",")
@@ -141,6 +144,29 @@ client.on("ready", () => {
   const me = client.info && client.info.wid ? client.info.wid._serialized : "";
   console.log(`WhatsApp bridge is ready. ECHO_ONLY = ${ECHO_ONLY} linked=${anon(me)}`);
   startBridgeApi(client);
+});
+
+// Every message in or out, so the dashboard's WhatsApp pane follows the real
+// thing instead of polling for it. Deliberately carries nothing but the chat
+// id: the pane reads the conversation itself over the authenticated API, so
+// no message text passes through here, and this is NOT the agent's path —
+// that stays below, behind the allowlist. "message_create" rather than
+// "message" so what you send from your own phone shows up too.
+const CHAT_ID = /^\d+@(c\.us|lid|g\.us)$/;
+
+client.on("message_create", async (msg) => {
+  const chatId = String((msg.fromMe ? msg.to : msg.from) || "");
+  if (!CHAT_ID.test(chatId)) return;
+  try {
+    await axios.post(ACTIVITY_URL, { chat_id: chatId }, {
+      timeout: 5000,
+      headers: { "x-bridge-token": process.env.BRIDGE_API_TOKEN || "" },
+    });
+  } catch (err) {
+    // A dashboard that misses a nudge falls back to its slow refresh, so this
+    // must never take the bridge down with it.
+    console.error(`activity ping failed for ${anon(chatId)}:`, err.message);
+  }
 });
 
 client.on("message", async (msg) => {
