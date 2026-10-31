@@ -183,7 +183,8 @@ uvicorn app.main:app --port 8000        # 1. start the backend first
 cd whatsapp-bridge && npm start         # 2. then the bridge, and scan the QR code once
 ```
 
-Open `http://localhost:8000/dashboard` (or your tunnel URL) and sign in with `DASHBOARD_PASSWORD`.
+Open `http://localhost:8000/` (or your tunnel URL) and sign in with `DASHBOARD_PASSWORD`; the bare
+address redirects to `/dashboard`.
 
 ### Your WhatsApp on the dashboard
 

@@ -7,6 +7,7 @@ load_dotenv()  # first, so every module below sees the .env values (USER_NAME, t
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from app import db, live
@@ -132,6 +133,14 @@ async def webhook(msg: IncomingMessage, x_bridge_token: str = Header(default="")
         response["reply_audio_base64"] = await synthesize_to_base64(result["reply_text"])
 
     return response
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    """The bare domain is what gets typed and bookmarked, and there was nothing
+    there. Temporary rather than permanent: a 301 is cached by the browser for
+    good, and this should stay cheap to change."""
+    return RedirectResponse("/dashboard", status_code=302)
 
 
 @app.get("/health")

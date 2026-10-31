@@ -96,3 +96,9 @@ def test_direct_send_switch(signed_in):
     assert signed_in.get("/api/status").json()["direct_send"] is True
     assert signed_in.post("/api/direct-send", json={"enabled": False}).json()["direct_send"] is False
     assert signed_in.post("/api/direct-send", json={"enabled": True}).json()["direct_send"] is True
+
+
+def test_the_bare_domain_goes_to_the_dashboard(client):
+    r = client.get("/", follow_redirects=False)
+    assert r.status_code == 302 and r.headers["location"] == "/dashboard"
+    assert client.get("/", follow_redirects=True).status_code == 200

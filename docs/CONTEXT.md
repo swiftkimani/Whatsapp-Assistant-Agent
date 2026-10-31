@@ -310,6 +310,9 @@ per-contact modes — has to be set again per deployment.
   pre-port baseline (2026-10-04, 3 runs/case) scored 31/32 with **one unsafe
   send**; this run had none. Re-run after filling the notes.
 - `pytest 9.2.0` is newer than anything this repo was tested on.
+- The bare domain used to 404, which looked like a broken deploy. `GET /` now
+  redirects to `/dashboard` (302, not 301: a permanent redirect is cached by
+  the browser for good and this should stay cheap to change).
 - A large address book makes a long Contacts tab and a long contact filter in
   Messages: both are flat lists with no search. `CONTACTS_SYNC_LIMIT` keeps it
   bounded; a search box is the fix if it starts to grate.
