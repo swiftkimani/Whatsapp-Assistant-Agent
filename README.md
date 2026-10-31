@@ -215,7 +215,7 @@ Copy `.env.example` and set at least the **bold** values.
 | `TRUST_PROXY` | `true` if behind a tunnel, so lockouts use the real client IP |
 | **`BRIDGE_API_TOKEN`** | Shared secret between bridge and backend (both directions) |
 | `BRIDGE_API_URL`, `BRIDGE_API_PORT`, `BACKEND_URL` | Where the two programs find each other |
-| **`ALLOWED_CONTACTS`** | Comma-separated phone numbers that get answered. Empty means everyone, so set it before going live |
+| **`ALLOWED_CONTACTS`** | Who gets answered: phone numbers, and/or `contacts` for everyone in your address book. Empty means **everyone**, so set it before going live |
 | `CONTACTS_SYNC_LIMIT` | Most contacts one sync may add to `contacts.json` (default 500) |
 | `HISTORY_TURNS` | Past exchanges given to the model (default 12, capped at 50) |
 | `SEED_HISTORY` | Pull the existing WhatsApp thread the first time someone writes (default `true`) |

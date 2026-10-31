@@ -9,6 +9,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { checkAllowed } = require("./allowlist");
+const { readContacts } = require("./bridge_api");
 const { startBridgeApi } = require("./bridge_api");
 
 // Load the SAME .env file the Python backend uses, from the project root
@@ -53,6 +54,8 @@ function allowCheck(msg) {
   return checkAllowed(msg.from, {
     allowed: ALLOWED_CONTACTS,
     allowGroups: ALLOW_GROUPS,
+    // Read fresh each time, so syncing a new contact takes effect at once.
+    addressBook: () => Object.values(readContacts()),
     // Some contacts arrive as an opaque "@lid" privacy id rather than a
     // number; only then is a lookup worth the round trip.
     resolveContact: () => msg.getContact(),

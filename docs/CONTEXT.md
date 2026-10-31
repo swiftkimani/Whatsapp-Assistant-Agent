@@ -51,9 +51,11 @@ instead of OpenAI.
   repo deliberately in 875f8b1.
 
 ## Next (ordered)
-1. Set `ALLOWED_CONTACTS` — **empty means every sender is processed**. With
-   `auto_reply` off nothing is sent, but their messages are still stored and
-   sent to the API, so this is a privacy setting as much as a safety one.
+1. Set `ALLOWED_CONTACTS=contacts` so the address book is the allowlist.
+   **Empty means every sender is processed**, and a list of hand-typed numbers
+   goes stale the moment contacts are synced. With `auto_reply` off nothing is
+   sent, but messages are still stored and sent to the API, so this is a
+   privacy setting as much as a safety one.
 2. Fill `data/kb/about_me.md` and `data/style_examples.md` (see
    `data/kb/FILL_THIS_IN.md`). `contacts.json` is now populated by the
    dashboard's **Sync from WhatsApp** button rather than by hand.

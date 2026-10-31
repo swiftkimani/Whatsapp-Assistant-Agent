@@ -1,5 +1,6 @@
 import hmac
 import os
+import re
 
 from dotenv import load_dotenv
 
@@ -14,6 +15,7 @@ from app import db, live, quiet_hours
 from app.agent_graph import run_agent
 from app.approvals import router as approvals_router
 from app.assistant import router as assistant_router
+from app import contacts as contacts_store
 from app.contacts import name_for
 from app.controls import router as controls_router
 from app.dashboard import router as dashboard_router
@@ -37,17 +39,33 @@ def _load_allowed_contacts() -> set[str]:
     return {c.strip() for c in raw.split(",") if c.strip()}
 
 
+def _digits(value: str) -> str:
+    return re.sub(r"\D", "", value or "")
+
+
 def is_allowed(contact_id: str, number: str | None = None) -> bool:
     if contact_id.endswith("@g.us") and not ALLOW_GROUPS:
         return False
 
-    allowed = _load_allowed_contacts()
-    if not allowed:
+    entries = _load_allowed_contacts()
+    if not entries:
         return True
 
-    # The bridge resolves opaque "@lid" ids to a real phone number and sends it
-    # as `number`; fall back to the id itself for plain "@c.us" contacts.
-    return (number or contact_id.split("@")[0]).strip() in allowed
+    # "contacts" means everyone in the address book, which is the only setting
+    # that stays correct as contacts are synced. An unreadable or empty book
+    # means nobody rather than everybody.
+    numbers = {_digits(e) for e in entries if e.lower() != "contacts"} - {""}
+    if any(e.lower() == "contacts" for e in entries):
+        book = {_digits(v) for v in contacts_store.load().values()} - {""}
+        if not book:
+            return False
+        numbers |= book
+
+    theirs = _digits(number or contact_id.split("@")[0])
+    if not theirs:
+        return False
+    # Same person, different formats: 254712345678 and 0712345678 are one line.
+    return any(n == theirs or (len(theirs) >= 9 and n[-9:] == theirs[-9:]) for n in numbers)
 
 
 class IncomingMessage(BaseModel):

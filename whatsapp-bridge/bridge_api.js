@@ -183,4 +183,4 @@ function startBridgeApi(client) {
   server.listen(port, host, () => console.log(`Bridge API on ${host}:${port}`));
 }
 
-module.exports = { startBridgeApi };
+module.exports = { startBridgeApi, readContacts };

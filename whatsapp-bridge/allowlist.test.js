@@ -69,3 +69,46 @@ test("an empty allowlist lets everyone through, which is the documented risk", a
   assert.equal(r.allowed, true);
   assert.equal(r.reason, "allowlist_empty");
 });
+
+// ---- "contacts": the address book as the allowlist ----
+
+const book = (...numbers) => () => numbers;
+
+test("everyone in the address book gets through when contacts is listed", async () => {
+  const opts = { allowed: ["contacts"], addressBook: book("254712345678", "0722000111") };
+  assert.strictEqual((await checkAllowed("254712345678@c.us", opts)).allowed, true);
+  assert.strictEqual((await checkAllowed("254722000111@c.us", opts)).allowed, true);  // stored locally
+});
+
+test("someone not in the address book is still refused", async () => {
+  const res = await checkAllowed("254799999999@c.us", {
+    allowed: ["contacts"], addressBook: book("254712345678"),
+  });
+  assert.strictEqual(res.allowed, false);
+  assert.strictEqual(res.reason, "not_in_allowlist");
+});
+
+test("contacts and hand-typed numbers can be mixed", async () => {
+  const opts = { allowed: ["contacts", "254700000001"], addressBook: book("254712345678") };
+  assert.strictEqual((await checkAllowed("254700000001@c.us", opts)).allowed, true);
+  assert.strictEqual((await checkAllowed("254712345678@c.us", opts)).allowed, true);
+});
+
+test("an empty address book means nobody, not everybody", async () => {
+  const res = await checkAllowed("254712345678@c.us", { allowed: ["contacts"], addressBook: book() });
+  assert.strictEqual(res.allowed, false);
+  assert.strictEqual(res.reason, "address_book_empty");
+});
+
+test("an unreadable address book fails closed", async () => {
+  const res = await checkAllowed("254712345678@c.us", {
+    allowed: ["contacts"],
+    addressBook: () => { throw new Error("broken json"); },
+  });
+  assert.strictEqual(res.allowed, false);
+  assert.strictEqual(res.reason, "address_book_unreadable");
+});
+
+test("the empty allowlist still means everyone, which is still the documented risk", async () => {
+  assert.strictEqual((await checkAllowed("254799999999@c.us", { allowed: [] })).allowed, true);
+});

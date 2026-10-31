@@ -8,15 +8,35 @@
 /**
  * @param {string} chatId        e.g. "2547...@c.us", "...@lid", "...@g.us"
  * @param {object} opts
- * @param {string[]} opts.allowed  allowlisted numbers, digits only
+ * @param {string[]} opts.allowed  allowlisted numbers, and/or the word
+ *        "contacts" meaning everyone in the address book
  * @param {boolean} opts.allowGroups
+ * @param {() => string[]} [opts.addressBook] numbers from contacts.json,
+ *        only called when "contacts" is listed
  * @param {() => Promise<{number?: string}|null>} [opts.resolveContact]
  *        resolves an @lid privacy id to a real contact; only called for @lid
  * @returns {Promise<{allowed: boolean, number: string, kind: string, reason: string}>}
  */
-async function checkAllowed(chatId, { allowed, allowGroups, resolveContact } = {}) {
+async function checkAllowed(chatId, { allowed, allowGroups, resolveContact, addressBook } = {}) {
   const from = String(chatId || "");
-  const list = (allowed || []).map((n) => String(n).replace(/\D/g, "")).filter(Boolean);
+  const entries = (allowed || []).map((n) => String(n).trim()).filter(Boolean);
+
+  // "contacts" stands for everyone in the address book. Hand-typing numbers
+  // does not survive contact sync, and the alternative people reach for —
+  // leaving this empty — answers complete strangers.
+  const usesAddressBook = entries.some((e) => e.toLowerCase() === "contacts");
+  const list = entries.map((n) => n.replace(/\D/g, "")).filter(Boolean);
+  if (usesAddressBook && typeof addressBook === "function") {
+    try {
+      for (const number of addressBook()) {
+        const digits = String(number).replace(/\D/g, "");
+        if (digits) list.push(digits);
+      }
+    } catch {
+      // An unreadable contacts.json must not quietly widen the allowlist.
+      return { allowed: false, number: "", kind: "unknown", reason: "address_book_unreadable" };
+    }
+  }
   const kind = from.endsWith("@g.us") ? "group" : from.endsWith("@lid") ? "lid" : "direct";
 
   // Drop the device suffix BEFORE stripping punctuation. On multi-device
@@ -37,7 +57,12 @@ async function checkAllowed(chatId, { allowed, allowGroups, resolveContact } = {
     }
   }
 
-  if (list.length === 0) return { allowed: true, number, kind, reason: "allowlist_empty" };
+  if (entries.length === 0) return { allowed: true, number, kind, reason: "allowlist_empty" };
+  if (list.length === 0) {
+    // "contacts" was asked for and the address book is empty: nobody, rather
+    // than everybody. Failing open here would be the worst possible default.
+    return { allowed: false, number, kind, reason: "address_book_empty" };
+  }
 
   // Compare on the last 9 digits as well as the whole number. The same person
   // reaches you as 254712345678, 0712345678 or +254 712 345 678 depending on
