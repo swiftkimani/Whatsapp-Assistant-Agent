@@ -186,6 +186,17 @@ cd whatsapp-bridge && npm start         # 2. then the bridge, and scan the QR co
 Open `http://localhost:8000/` (or your tunnel URL) and sign in with `DASHBOARD_PASSWORD`; the bare
 address redirects to `/dashboard`.
 
+### Knowing which messages were not yours
+
+**Copy to me** (a switch at the top of the dashboard) puts every reply the assistant sends by
+itself into your own WhatsApp chat — "🤖 Arianna replied to Mom: …" — so your phone shows what
+went out in your name. The message the other person receives is untouched.
+
+There is no way to mark the message itself for you alone: WhatsApp renders the same characters
+at both ends, so a visible marker is visible to them too, and an invisible one is invisible to
+you as well. The Messages tab is the other record — it labels every message *auto-reply*,
+*sent after your approval* or *sent from this dashboard*.
+
 ### Your WhatsApp on the dashboard
 
 The **WhatsApp** tab lists your conversations and opens any of them, and on a screen wider than

@@ -13,7 +13,8 @@ const { shapeChats, shapeMessages, CHAT_ID, DEFAULT_CHATS, DEFAULT_MESSAGES } = 
 // can share one copy when they run as separate containers.
 const CONTACTS_FILE = process.env.CONTACTS_FILE
   || path.resolve(__dirname, "..", "contacts.json");
-const ROUTES = ["/send-text", "/send-location", "/send-reply", "/sync-contacts", "/chats", "/thread"];
+const ROUTES = ["/send-text", "/send-location", "/send-reply", "/sync-contacts",
+  "/chats", "/thread", "/send-self"];
 let started = false; // "ready" can fire again after a reconnect
 
 // Re-read on every request so edits to contacts.json apply without a restart.
@@ -96,6 +97,21 @@ function startBridgeApi(client) {
             chat: { id: chatId, name: shapeChats([chat], { limit: 1 })[0].name, is_group: Boolean(chat.isGroup) },
             messages,
           });
+        }
+
+        if (req.url === "/send-self") {
+          // A note in the owner's own "message yourself" chat, so what the
+          // assistant sent in their name is visible on their phone without
+          // marking the message the other person received. The recipient is
+          // the linked account itself and is never taken from the request.
+          const me = client.info && client.info.wid
+            ? (client.info.wid._serialized || client.info.wid.$1) : "";
+          if (!me) return reply(503, { error: "not linked yet" });
+          const text = String(data.text || "").trim();
+          if (!text || text.length > 4000) return reply(400, { error: "bad text" });
+          await client.sendMessage(me, text);
+          console.log("[send] /send-self");
+          return reply(200, { status: "sent" });
         }
 
         if (req.url === "/send-reply") {

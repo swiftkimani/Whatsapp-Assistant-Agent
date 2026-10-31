@@ -190,6 +190,12 @@ def auto_reply_enabled() -> bool:
     return get_setting("auto_reply", "1") == "1"
 
 
+def self_log_enabled() -> bool:
+    """When on, every reply the assistant sends by itself is copied to the
+    owner's own WhatsApp chat, so their phone shows what went out as them."""
+    return get_setting("self_log", "0") == "1"
+
+
 def direct_send_enabled() -> bool:
     """When on, "send X to Mom" in the dashboard goes out without a confirmation card."""
     return get_setting("direct_send", "1") == "1"

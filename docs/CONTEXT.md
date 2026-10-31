@@ -306,6 +306,30 @@ a default that is no longer `auto`, choosing "reply automatically" for one
 person was silently discarded — the one choice that matters. It compares against the
 current default instead.
 
+## Done — knowing which replies were not yours (2026-10-31)
+"How do I know on my phone that the text is AI generated?" has a hard
+constraint behind it: WhatsApp renders the same bytes at both ends, so a
+marker in the message is either visible to the owner *and* the recipient, or
+invisible to both — an invisible watermark cannot be read off a phone screen
+either, so it does not answer the question.
+
+**Copy to me** (`self_log`, off by default) instead sends a note to the
+owner's own chat whenever the assistant replies by itself:
+
+    🤖 Arianna replied to Mom:
+
+    niko njiani
+
+The recipient's message carries nothing extra. The bridge's `/send-self`
+takes the recipient from `client.info.wid`, never from the request, so a
+caller holding the token cannot redirect it. Best effort: a note that fails
+is logged and never turns a sent reply into a failed one. Held replies are
+not copied — the owner approved those and has already seen them.
+
+The other record, which already existed, is the Messages tab: every row is
+labelled *auto-reply*, *sent after your approval* or *sent from this
+dashboard*.
+
 ## Decisions
 - ADR-0001 Multi-tenancy: a container per tenant, not a tenant column.
   **Proposed, not started** — the blocking question is RAM per tenant

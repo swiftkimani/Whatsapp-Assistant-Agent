@@ -54,7 +54,8 @@ class DefaultModeRequest(BaseModel):
 
 
 def _status() -> dict:
-    return {"auto_reply": db.auto_reply_enabled(), "direct_send": db.direct_send_enabled(), "held": len(db.pending())}
+    return {"auto_reply": db.auto_reply_enabled(), "direct_send": db.direct_send_enabled(),
+            "self_log": db.self_log_enabled(), "held": len(db.pending())}
 
 
 @router.get("/api/status", dependencies=AUTH)
@@ -67,6 +68,14 @@ def set_auto_reply(body: ToggleRequest):
     db.set_setting("auto_reply", "1" if body.enabled else "0")
     db.log("auto_reply_toggled", "on" if body.enabled else "off")
     log_event("auto_reply_toggled", enabled=body.enabled)
+    return _status()
+
+
+@router.post("/api/self-log", dependencies=AUTH)
+def set_self_log(body: ToggleRequest):
+    db.set_setting("self_log", "1" if body.enabled else "0")
+    db.log("self_log_toggled", "on" if body.enabled else "off")
+    log_event("self_log_toggled", enabled=body.enabled)
     return _status()
 
 

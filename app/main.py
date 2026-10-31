@@ -15,6 +15,9 @@ from app import db, live, quiet_hours
 from app.agent_graph import run_agent
 from app.approvals import router as approvals_router
 from app.assistant import router as assistant_router
+import httpx
+
+from app import bridge
 from app import contacts as contacts_store
 from app.contacts import name_for
 from app.controls import router as controls_router
@@ -159,6 +162,7 @@ async def webhook(msg: IncomingMessage, x_bridge_token: str = Header(default="")
         return {"action": "hold", "reply_text": result["reply_text"], "reason": reason}
 
     add_assistant_message(msg.from_, result["reply_text"])
+    await _copy_to_owner(name or (msg.number or msg.from_.split("@")[0]), result["reply_text"])
     db.log("auto_reply", msg.from_)
     db.log_message(msg.from_, name, "in", result["resolved_text"], "replied")
     db.log_message(msg.from_, name, "out", result["reply_text"], "auto")
@@ -169,6 +173,29 @@ async def webhook(msg: IncomingMessage, x_bridge_token: str = Header(default="")
         response["reply_audio_base64"] = await synthesize_to_base64(result["reply_text"])
 
     return response
+
+
+async def _copy_to_owner(who: str, text: str) -> None:
+    """Put a copy of a reply the assistant sent by itself into the owner's own
+    WhatsApp chat.
+
+    This is how the owner tells, on their phone, which messages were not
+    theirs. A marker inside the message itself cannot do it: WhatsApp renders
+    the same characters for both ends, so anything visible to the owner is
+    visible to the person they are talking to.
+
+    Best effort — a reply that went out must never be reported as failed
+    because the note about it did not.
+    """
+    if not db.self_log_enabled():
+        return
+    note = f"🤖 Arianna replied to {who}:\n\n{text}"
+    try:
+        response = await bridge.post("/send-self", {"text": note}, timeout=20)
+        if response.status_code != 200:
+            log_event("self_log_failed", level="warning", status=response.status_code)
+    except httpx.HTTPError as err:
+        log_event("self_log_failed", level="warning", error=type(err).__name__)
 
 
 @app.get("/", include_in_schema=False)

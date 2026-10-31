@@ -222,6 +222,7 @@
     <div class="chips">
       <button id="autoBtn" class="chip on" type="button" aria-pressed="true" title="When paused, every reply waits for your approval">Auto-reply: On</button>
       <button id="directBtn" class="chip on" type="button" aria-pressed="true" title="When on, messages you tell me to send go out immediately">Direct send: On</button>
+      <button id="copyBtn" class="chip off" type="button" aria-pressed="false" title="Copy every reply she sends by herself into your own WhatsApp chat, so your phone shows what went out as you">Copy to me: Off</button>
       <button id="wakeBtn" class="chip off" type="button" aria-pressed="false" title="Say the name to talk hands-free. Uses the browser's speech service (Chrome or Edge) while this page is open.">Say Arianna: Off</button>
       <button id="voiceBtn" class="chip on" type="button" aria-pressed="true" title="When on, what you dictate is sent right away and I answer out loud">Voice chat: On</button>
       <button id="lockBtn" class="chip plain" type="button">Sign out</button>
@@ -339,7 +340,7 @@
   const $ = (id) => document.getElementById(id);
   const app = $("app"), gate = $("gate"), log = $("log"), box = $("text");
   const history = [];
-  let contactNames = [], autoOn = true, directOn = true;
+  let contactNames = [], autoOn = true, directOn = true, copyOn = false;
 
   const el = (tag, cls, text) => {
     const e = document.createElement(tag);
@@ -459,16 +460,17 @@
   roomForBoth.addEventListener("change", () => show(currentView));
 
   // ---- status chips (the two switches) ----
-  const autoBtn = $("autoBtn"), directBtn = $("directBtn");
+  const autoBtn = $("autoBtn"), directBtn = $("directBtn"), copyBtn = $("copyBtn");
   function setChip(button, label, state, on, offClass) {
     button.className = "chip " + (on ? "on" : offClass);
     button.textContent = `${label}: ${state}`;
     button.setAttribute("aria-pressed", String(on));
   }
   function applyStatus(s) {
-    autoOn = s.auto_reply; directOn = s.direct_send;
+    autoOn = s.auto_reply; directOn = s.direct_send; copyOn = s.self_log;
     setChip(autoBtn, "Auto-reply", autoOn ? "On" : "Paused", autoOn, "warn");
     setChip(directBtn, "Direct send", directOn ? "On" : "Off", directOn, "off");
+    setChip(copyBtn, "Copy to me", copyOn ? "On" : "Off", copyOn, "off");
     const badge = $("heldCount");
     badge.hidden = !s.held;
     badge.textContent = s.held;
@@ -491,6 +493,9 @@
     ? "Auto-reply is paused. Every reply now waits in Held for your approval." : "Auto-reply is on.");
   directBtn.onclick = () => flip(directBtn, "/api/direct-send", !directOn, directOn
     ? "Direct send is off. I'll show a card to confirm before anything goes out." : "Direct send is on. What you tell me to send goes out immediately.");
+  copyBtn.onclick = () => flip(copyBtn, "/api/self-log", !copyOn, copyOn
+    ? "I'll stop copying my replies to you."
+    : "Every reply I send by myself will also appear in your own WhatsApp chat, so your phone shows what went out as you. The person you're talking to sees nothing extra.");
 
   // ---- voice chat: dictate -> sent right away -> answer spoken (preference kept on this device) ----
   const voiceBtn = $("voiceBtn"), voice = $("voice");

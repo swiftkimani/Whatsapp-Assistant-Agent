@@ -3,7 +3,8 @@ import pytest
 PROTECTED = [("get", "/api/held"), ("get", "/api/status"), ("get", "/api/audit"),
              ("get", "/api/contact-modes"), ("get", "/api/contacts"), ("get", "/api/session"),
              ("post", "/api/transcribe"), ("post", "/api/assistant"), ("post", "/api/auto-reply"),
-             ("post", "/api/contacts/sync")]
+             ("post", "/api/contacts/sync"), ("post", "/api/self-log"),
+             ("post", "/api/default-mode")]
 
 
 @pytest.mark.parametrize("method,path", PROTECTED)
