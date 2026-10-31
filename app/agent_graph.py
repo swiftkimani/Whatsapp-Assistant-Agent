@@ -4,7 +4,7 @@ from langgraph.graph import END, StateGraph
 
 from app.llm import chat_completion
 from app.log import anon, log_event
-from app.memory import get_history
+from app.memory import get_history, seed_from_whatsapp
 from app.stt import transcribe_base64_audio
 from app.style_retrieval import retrieve_examples
 from app.vision import caption_base64_image
@@ -22,6 +22,7 @@ class AgentState(TypedDict):
     needs_owner: bool             # only the owner can really answer this
     action: str                   # "send" | "hold"
     hold_reason: str              # "" | "needs_owner" | "not_grounded" | "empty_reply"
+    why: str                      # the model's own one-line account, for the owner
 
 
 def classify_and_resolve(state: AgentState) -> AgentState:
@@ -39,7 +40,13 @@ def classify_and_resolve(state: AgentState) -> AgentState:
 
 
 def fetch_history(state: AgentState) -> AgentState:
-    state["history"] = get_history(state["contact_id"])
+    history = get_history(state["contact_id"])
+    if not history:
+        # Nothing stored yet, but WhatsApp has been holding this conversation
+        # all along. Pull it once, so the first reply knows what was last said.
+        seed_from_whatsapp(state["contact_id"])
+        history = get_history(state["contact_id"])
+    state["history"] = history
     return state
 
 
@@ -60,6 +67,7 @@ def generate_reply(state: AgentState) -> AgentState:
     state["reply_text"] = result["reply"]
     state["grounded"] = result["grounded"]
     state["needs_owner"] = result["needs_owner"]
+    state["why"] = result.get("why", "")
     return state
 
 
@@ -118,5 +126,6 @@ def run_agent(contact_id: str, message_type: str, raw_text: str, media_base64: s
         "needs_owner": True,
         "action": "hold",
         "hold_reason": "",
+        "why": "",
     }
     return _compiled_graph.invoke(initial_state)

@@ -122,7 +122,7 @@ def test_an_activity_notice_reaches_every_open_dashboard(client):
         r = client.post("/wa-event", json={"chat_id": "254712345678@c.us"},
                         headers={"x-bridge-token": "bridge-secret"})
         assert r.status_code == 200
-        assert queue.get_nowait() == "254712345678@c.us"
+        assert queue.get_nowait() == ("activity", "254712345678@c.us")
     finally:
         live.unsubscribe(queue)
 

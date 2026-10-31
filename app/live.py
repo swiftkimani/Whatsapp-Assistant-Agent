@@ -29,8 +29,13 @@ def unsubscribe(queue: asyncio.Queue) -> None:
     _subscribers.discard(queue)
 
 
-def publish(chat_id: str) -> int:
-    """Tell every open dashboard that this conversation changed."""
+def publish(chat_id: str, kind: str = "activity") -> int:
+    """Tell every open dashboard that something happened in this conversation.
+
+    "activity" is a message in or out; "draft" is a reply the assistant wrote
+    and held, which the owner may want to act on straight away.
+    """
+    notice = (kind, chat_id)
     for queue in list(_subscribers):
         if queue.full():
             try:
@@ -38,7 +43,7 @@ def publish(chat_id: str) -> int:
             except asyncio.QueueEmpty:
                 pass
         try:
-            queue.put_nowait(chat_id)
+            queue.put_nowait(notice)
         except asyncio.QueueFull:
             pass
     return len(_subscribers)

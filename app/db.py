@@ -35,6 +35,8 @@ def init() -> None:
             incoming TEXT, reply TEXT, status TEXT DEFAULT 'pending')""")
         _add_column(c, "held", "reason", "TEXT DEFAULT ''")
         _add_column(c, "held", "number", "TEXT DEFAULT ''")
+        # The model's own one-line account of why it held, for the owner to read.
+        _add_column(c, "held", "why", "TEXT DEFAULT ''")
         c.execute("""CREATE TABLE IF NOT EXISTS audit (
             id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, kind TEXT, target TEXT)""")
         c.execute("""CREATE TABLE IF NOT EXISTS messages (
@@ -51,11 +53,13 @@ def init() -> None:
 
 # ---- held replies ----
 
-def add_held(chat_id: str, incoming: str, reply: str, reason: str = "", number: str | None = None) -> int:
+def add_held(chat_id: str, incoming: str, reply: str, reason: str = "",
+             number: str | None = None, why: str = "") -> int:
     with _db() as c:
         cur = c.execute(
-            "INSERT INTO held (ts, chat_id, incoming, reply, reason, number) VALUES (?, ?, ?, ?, ?, ?)",
-            (time.time(), chat_id, incoming, reply, reason, number or ""))
+            "INSERT INTO held (ts, chat_id, incoming, reply, reason, number, why) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (time.time(), chat_id, incoming, reply, reason, number or "", why))
         return cur.lastrowid
 
 

@@ -45,4 +45,6 @@ def test_a_blank_message_is_held_without_calling_the_model():
     """A voice note Whisper heard nothing in. There is nothing to reply to, and
     an empty turn would be rejected, so it must fail closed — and must not need
     an API key to do so."""
-    assert chat_completion("   ") == {"reply": "", "grounded": False, "needs_owner": True}
+    out = chat_completion("   ")
+    assert (out["reply"], out["grounded"], out["needs_owner"]) == ("", False, True)
+    assert out["why"]        # the Held tab says what happened rather than showing a blank card

@@ -10,7 +10,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from app import db, live
+from app import db, live, quiet_hours
 from app.agent_graph import run_agent
 from app.approvals import router as approvals_router
 from app.assistant import router as assistant_router
@@ -86,6 +86,17 @@ async def wa_event(event: ChatEvent, x_bridge_token: str = Header(default="")):
     return {"status": "ok"}
 
 
+@app.get("/agent-state")
+async def agent_state(x_bridge_token: str = Header(default="")):
+    """What the bridge needs to know before it acts on the owner's behalf.
+
+    Only "typing…" depends on this today: showing it while every reply is being
+    held would promise an answer that never comes.
+    """
+    _require_bridge(x_bridge_token)
+    return {"auto_reply": db.auto_reply_enabled() and not quiet_hours.is_quiet()}
+
+
 @app.post("/webhook")
 async def webhook(msg: IncomingMessage, x_bridge_token: str = Header(default="")):
     _require_bridge(x_bridge_token)
@@ -114,12 +125,19 @@ async def webhook(msg: IncomingMessage, x_bridge_token: str = Header(default="")
         action, reason = "hold", "paused"          # global kill switch
     elif action == "send" and mode == "hold":
         action, reason = "hold", "contact_mode"    # this contact is always approved by hand
+    elif action == "send" and quiet_hours.is_quiet():
+        # The draft is still written and still waiting; only sending it waits.
+        action, reason = "hold", "quiet_hours"
 
     if action == "hold":
-        db.add_held(msg.from_, result["resolved_text"], result["reply_text"], reason=reason, number=msg.number)
+        db.add_held(msg.from_, result["resolved_text"], result["reply_text"],
+                    reason=reason, number=msg.number, why=result.get("why", ""))
         db.log("held", msg.from_)
         db.log_message(msg.from_, name, "in", result["resolved_text"], "held")
         log_event("held", chat=anon(msg.from_), reason=reason)
+        # So the draft appears beside the conversation at once, rather than
+        # waiting in a tab the owner has to remember to open.
+        live.publish(msg.from_, kind="draft")
         return {"action": "hold", "reply_text": result["reply_text"], "reason": reason}
 
     add_assistant_message(msg.from_, result["reply_text"])

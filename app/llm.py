@@ -46,10 +46,6 @@ def _load_md_section(path: Path, heading: str) -> str:
     return "\n".join(section_lines)
 
 
-_REDIRECT_RULES = _load_md_section(KB_PATH, "Things to redirect rather than answer directly")
-_SCHEDULE_INFO = _load_md_section(KB_PATH, "Schedule")
-
-
 USER_NAME = os.getenv("USER_NAME", "Shahd")
 
 
@@ -74,9 +70,6 @@ def _load_style_examples() -> str:
             if example:
                 examples.append(example)
     return "\n".join(f"- {e}" for e in examples)
-
-
-_STYLE_EXAMPLES = _load_style_examples()
 
 BASE_SYSTEM_PROMPT = f"""You are {USER_NAME}, replying to your own WhatsApp
 messages. You ARE this person — not an assistant describing them in the
@@ -191,38 +184,68 @@ BASE_SYSTEM_PROMPT += "\n\n" + ANSWER_FORMAT
 IMAGE_HINT = """The incoming message is a photo. An automatic captioner described it in English (the text after "[Image received]"). Treat that as what you are looking at.
 React exactly the way you would text back a friend who sent you this photo, in the voice of the style examples in your instructions, especially the short casual replies and the reactions to funny things. Write one short line in the register you would normally use with this person — Kenyan English, Sheng or Kiswahili. Follow the punctuation rule. Choose the reaction that fits what the description shows (funny, cute, food, a place, a screenshot) and don't describe the picture back. Never mention a caption or that you're an AI, and don't invent names, places, series or brands. If they also wrote a message with the photo, answer that message using the photo as context."""
 
-_KB_TEXT = KB_PATH.read_text(encoding="utf-8").strip() if KB_PATH.exists() else ""
-if _KB_TEXT:
-    BASE_SYSTEM_PROMPT += (
-        "\n\nFacts about you. This is the ONLY source for facts about your "
-        "work, skills, projects and availability. If something is not here, "
-        "do not state it:\n" + _KB_TEXT
-    )
+def _signature() -> tuple:
+    """Changes when either notes file does, so an edit takes effect on the next
+    message instead of on the next restart. Both live on a Docker volume and are
+    written from the dashboard, which is why this cannot be read once at import."""
+    marks = []
+    for path in (KB_PATH, STYLE_EXAMPLES_PATH):
+        try:
+            stat = path.stat()
+            marks.append((stat.st_mtime_ns, stat.st_size))
+        except OSError:
+            marks.append(None)
+    return tuple(marks)
 
-if _REDIRECT_RULES:
-    BASE_SYSTEM_PROMPT += (
-        "\n\nThese rules always apply, regardless of what context is "
-        "retrieved below — follow them even if the retrieved context "
-        "doesn't happen to mention them:\n" + _REDIRECT_RULES
-    )
 
-if _SCHEDULE_INFO:
-    BASE_SYSTEM_PROMPT += (
-        "\n\nYour actual schedule (always available, not dependent on "
-        "retrieval) — use this together with the current day/time given "
-        "separately to answer location questions:\n" + _SCHEDULE_INFO
-    )
+def _build_system_prompt() -> str:
+    prompt = BASE_SYSTEM_PROMPT
+    kb_text = KB_PATH.read_text(encoding="utf-8").strip() if KB_PATH.exists() else ""
+    if kb_text:
+        prompt += (
+            "\n\nFacts about you. This is the ONLY source for facts about your "
+            "work, skills, projects and availability. If something is not here, "
+            "do not state it:\n" + kb_text
+        )
 
-if _STYLE_EXAMPLES:
-    SYSTEM_PROMPT = (
-        BASE_SYSTEM_PROMPT
-        + "\n\nHere are examples of how the user naturally writes. Match "
-        "this tone and phrasing style — don't copy these lines verbatim, "
-        "use them as a guide for voice only:\n"
-        + _STYLE_EXAMPLES
-    )
-else:
-    SYSTEM_PROMPT = BASE_SYSTEM_PROMPT
+    redirect_rules = _load_md_section(KB_PATH, "Things to redirect rather than answer directly")
+    if redirect_rules:
+        prompt += (
+            "\n\nThese rules always apply, regardless of what context is "
+            "retrieved below — follow them even if the retrieved context "
+            "doesn't happen to mention them:\n" + redirect_rules
+        )
+
+    schedule = _load_md_section(KB_PATH, "Schedule")
+    if schedule:
+        prompt += (
+            "\n\nYour actual schedule (always available, not dependent on "
+            "retrieval) — use this together with the current day/time given "
+            "separately to answer location questions:\n" + schedule
+        )
+
+    style_examples = _load_style_examples()
+    if style_examples:
+        prompt += (
+            "\n\nHere are examples of how the user naturally writes. Match "
+            "this tone and phrasing style — don't copy these lines verbatim, "
+            "use them as a guide for voice only:\n" + style_examples
+        )
+    return prompt
+
+
+_prompt_cache: tuple[tuple, str] | None = None
+
+
+def system_prompt() -> str:
+    """Rebuilt only when a notes file changes, so the text stays identical
+    between messages and the prompt cache keeps hitting."""
+    global _prompt_cache
+    signature = _signature()
+    if _prompt_cache is None or _prompt_cache[0] != signature:
+        _prompt_cache = (signature, _build_system_prompt())
+        log_event("system_prompt_built", chars=len(_prompt_cache[1]))
+    return _prompt_cache[1]
 
 import re
 
@@ -243,9 +266,11 @@ def _parse_answer(raw: str) -> dict:
             "reply": clean_reply(data["reply"]),
             "grounded": data.get("grounded") is True,
             "needs_owner": data.get("needs_owner") is not False,
+            "why": str(data.get("why") or "").strip()[:200],
         }
     except (ValueError, KeyError, TypeError):
-        return {"reply": "", "grounded": False, "needs_owner": True}
+        return {"reply": "", "grounded": False, "needs_owner": True,
+                "why": "the model's answer could not be read"}
 
 
 # Shape of the answer, enforced by the API rather than asked for in the prompt.
@@ -255,8 +280,14 @@ ANSWER_SCHEMA = {
         "reply": {"type": "string"},
         "grounded": {"type": "boolean"},
         "needs_owner": {"type": "boolean"},
+        # One short line, for the owner reading the Held tab. Not shown to the
+        # person who wrote in, and never a substitute for the two flags above —
+        # the send/hold decision is made from those, not from this.
+        "why": {"type": "string",
+                "description": "One short line, to the owner, saying why this is safe to send "
+                               "or why they need to handle it. No more than 20 words."},
     },
-    "required": ["reply", "grounded", "needs_owner"],
+    "required": ["reply", "grounded", "needs_owner", "why"],
     "additionalProperties": False,
 }
 
@@ -282,7 +313,8 @@ def chat_completion(user_message: str, history: list[dict] | None = None, messag
         # Nothing to reply to — a voice note Whisper heard nothing in, say. An
         # empty turn is rejected by the API, so hold it without spending a call.
         log_event("llm_skipped_empty_input", level="warning")
-        return _parse_answer("")
+        return {"reply": "", "grounded": False, "needs_owner": True,
+                "why": "nothing came through to reply to"}
 
     now = now or datetime.now(LOCAL_TZ)
     time_context = f"Current day and time: {now.strftime('%A')}, {now.strftime('%I:%M %p')} ({LOCAL_TZ} time)."
@@ -290,7 +322,7 @@ def chat_completion(user_message: str, history: list[dict] | None = None, messag
     # The long, unchanging part goes first and carries the cache breakpoint; the
     # per-message parts (time, examples, image hint) follow it so they never
     # invalidate the cached prefix.
-    system = [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}},
+    system = [{"type": "text", "text": system_prompt(), "cache_control": {"type": "ephemeral"}},
               {"type": "text", "text": time_context}]
     if examples:
         shots = "\n".join(f"They wrote: {e['incoming']}\nYou replied: {e['reply']}" for e in examples)

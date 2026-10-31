@@ -20,7 +20,7 @@ from app import db
 from app.controls import LOCAL_TZ, RANGE_LABELS, find_messages
 from app.dashboard import _contact_names, require_auth
 from app.lang import looks_swahili
-from app.llm import EFFORT, MODEL, _STYLE_EXAMPLES, _get_client, _normalize_history
+from app.llm import EFFORT, MODEL, _get_client, _load_style_examples, _normalize_history
 
 router = APIRouter()
 AUTH = [Depends(require_auth)]
@@ -73,7 +73,7 @@ Tools:
 - show_messages: when they ask who messaged them, what someone sent, or to list messages. The app shows them itself. You can't read their content, so never describe, summarise or guess what any message says.
 For anything else, just answer in text. Don't call a tool for normal conversation. Reply in the language they write in.
 Voice examples for drafting:
-{_STYLE_EXAMPLES}"""
+{_load_style_examples()}"""
 
 
 class ChatRequest(BaseModel):

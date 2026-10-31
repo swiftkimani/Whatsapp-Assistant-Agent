@@ -217,6 +217,10 @@ Copy `.env.example` and set at least the **bold** values.
 | `BRIDGE_API_URL`, `BRIDGE_API_PORT`, `BACKEND_URL` | Where the two programs find each other |
 | **`ALLOWED_CONTACTS`** | Comma-separated phone numbers that get answered. Empty means everyone, so set it before going live |
 | `CONTACTS_SYNC_LIMIT` | Most contacts one sync may add to `contacts.json` (default 500) |
+| `HISTORY_TURNS` | Past exchanges given to the model (default 12, capped at 50) |
+| `SEED_HISTORY` | Pull the existing WhatsApp thread the first time someone writes (default `true`) |
+| `QUIET_HOURS` | e.g. `22:00-07:00` — replies are written and held, not sent |
+| `TYPING_INDICATOR` | Show "typing…" while the model works (default `false`) |
 | `ALLOW_GROUPS` | Answer group chats (default `false`) |
 | `WHISPER_MODEL_SIZE`, `DASHBOARD_WHISPER_SIZE` | Model size for voice notes and for dashboard dictation |
 | `TTS_PROVIDER` | `edge` (free) or `openai` (an instructable, more Kenyan-sounding voice, paid per use) |
@@ -288,6 +292,8 @@ app/
   style_retrieval.py, export_parser.py  tone retrieval from past chats
   contacts.py, log.py                   contacts.json lookup, structured logging
   live.py            notices that a conversation changed, pushed to open dashboards
+  bridge.py          the one place that talks to the WhatsApp bridge
+  quiet_hours.py     hours when replies are written but not sent
 whatsapp-bridge/     index.js (WhatsApp connection), bridge_api.js (local send API),
                      allowlist.js (who may reach the assistant), contacts_sync.js (address book -> contacts.json),
                      wa_read.js (chats and threads for the dashboard), *.test.js (node --test)

@@ -7,8 +7,20 @@ from app.llm import _parse_answer
 
 
 def test_valid_answer():
-    out = _parse_answer(json.dumps({"reply": " اه ماشي ", "grounded": True, "needs_owner": False}))
-    assert out == {"reply": "اه ماشي", "grounded": True, "needs_owner": False}
+    out = _parse_answer(json.dumps({"reply": " اه ماشي ", "grounded": True,
+                                    "needs_owner": False, "why": "just a greeting"}))
+    assert out == {"reply": "اه ماشي", "grounded": True, "needs_owner": False,
+                   "why": "just a greeting"}
+
+
+def test_the_reason_is_optional_and_bounded():
+    """An older or truncated answer without it must still parse, and a model
+    that ignores the 20-word instruction must not fill the Held tab."""
+    out = _parse_answer(json.dumps({"reply": "sawa", "grounded": True, "needs_owner": False}))
+    assert out["why"] == "" and out["reply"] == "sawa"
+    long = _parse_answer(json.dumps({"reply": "sawa", "grounded": True,
+                                     "needs_owner": False, "why": "x" * 500}))
+    assert len(long["why"]) == 200
 
 
 @pytest.mark.parametrize("raw", ["", "not json", "[]", "null", '{"grounded": true}', '{"reply": null}'])

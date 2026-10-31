@@ -29,8 +29,10 @@ def list_held():
     for r in db.pending():
         name = contacts.name_for(r["chat_id"], r.get("number"))
         items.append({
-            "id": r["id"], "name": name, "from": name or r["chat_id"].split("@")[0],
+            "id": r["id"], "chat_id": r["chat_id"],
+            "name": name, "from": name or r["chat_id"].split("@")[0],
             "incoming": r["incoming"], "reply": r["reply"], "reason": r.get("reason") or "",
+            "why": r.get("why") or "",
         })
     return {"items": items}
 

@@ -27,8 +27,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
+from typing import Literal
 
+from app import bridge
 from app import contacts as contacts_store
+from app import llm
 from app import db, live
 from app.log import log_event
 from app.stt import transcribe_bytes
@@ -236,16 +239,10 @@ def _phone_fix() -> dict | None:
 async def _bridge_post(path: str, payload: dict, timeout: float) -> httpx.Response:
     """One POST to the bridge's local API. The bridge holds the WhatsApp
     session, so anything that needs WhatsApp itself goes through here."""
-    bridge_url = os.getenv("BRIDGE_API_URL", "http://127.0.0.1:3001")
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            return await client.post(
-                f"{bridge_url}{path}",
-                json=payload,
-                headers={"x-bridge-token": os.getenv("BRIDGE_API_TOKEN", "")},
-            )
+        return await bridge.post(path, payload, timeout)
     except httpx.HTTPError:
-        raise HTTPException(502, "Can't reach the WhatsApp bridge. Is it running?")
+        raise HTTPException(502, bridge.UNREACHABLE)
 
 
 async def _send(kind: str, path: str, payload: dict, cooldown: float) -> dict:
@@ -353,6 +350,56 @@ async def _bridge_read(path: str, payload: dict, timeout: float) -> dict:
     return r.json()
 
 
+# ------------------------------------------------------ your own notes ----
+# These two files are the only thing the assistant knows about its owner, and
+# they live on a Docker volume the image never writes to — so without this the
+# only way to put a line in them is shell access to the server.
+
+NOTES = {"about_me": llm.KB_PATH, "style": llm.STYLE_EXAMPLES_PATH}
+MAX_NOTE_CHARS = 20000
+
+
+class NoteRequest(BaseModel):
+    name: Literal["about_me", "style"]
+    text: str = Field(max_length=MAX_NOTE_CHARS)
+
+
+def _read_note(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""      # not written yet, which is the normal first state
+
+
+@router.get("/api/notes", dependencies=[Depends(require_auth)])
+def read_notes():
+    return {"notes": {name: _read_note(path) for name, path in NOTES.items()}}
+
+
+@router.post("/api/notes", dependencies=[Depends(require_auth)])
+def write_note(body: NoteRequest):
+    """Saved through a temporary file and renamed, so a half-written save can
+    never leave the assistant reading a truncated version of who you are.
+
+    The prompt notices the new mtime by itself, so this takes effect on the
+    next message rather than on the next restart.
+    """
+    path = NOTES[body.name]
+    text = body.text.replace("\r\n", "\n")
+    temporary = path.with_suffix(f"{path.suffix}.tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary.write_text(text, encoding="utf-8")
+        temporary.replace(path)
+    except OSError as err:
+        log_event("note_save_failed", level="error", note=body.name, error=type(err).__name__)
+        raise HTTPException(500, "Could not save that. The notes folder may not be writable.")
+
+    # Length only: these are the owner's own words and do not belong in a log.
+    log_event("note_saved", note=body.name, chars=len(text))
+    return {"status": "saved", "chars": len(text)}
+
+
 @router.get("/api/wa/chats", dependencies=[Depends(require_auth)])
 async def wa_chats(limit: int = Query(25, ge=1, le=100)):
     """Recent conversations, most recently active first."""
@@ -380,11 +427,11 @@ async def wa_stream(request: Request):
             yield "retry: 3000\n\n"
             while not await request.is_disconnected():
                 try:
-                    chat_id = await asyncio.wait_for(queue.get(), timeout=STREAM_KEEPALIVE)
+                    kind, chat_id = await asyncio.wait_for(queue.get(), timeout=STREAM_KEEPALIVE)
                 except TimeoutError:
                     yield ": still here\n\n"   # stops a proxy closing an idle stream
                     continue
-                yield f"event: activity\ndata: {json.dumps({'chat_id': chat_id})}\n\n"
+                yield f"event: {kind}\ndata: {json.dumps({'chat_id': chat_id})}\n\n"
         finally:
             live.unsubscribe(queue)
 

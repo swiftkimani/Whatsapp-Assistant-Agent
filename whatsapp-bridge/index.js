@@ -33,6 +33,12 @@ const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000/webhook";
 // Where to say "this conversation moved". Same host as the webhook, so it
 // follows BACKEND_URL without a second thing to configure.
 const ACTIVITY_URL = process.env.ACTIVITY_URL || BACKEND_URL.replace(/\/webhook$/, "/wa-event");
+const STATE_URL = process.env.STATE_URL || BACKEND_URL.replace(/\/webhook$/, "/agent-state");
+// "typing…" while the model works, so the wait reads as a person rather than
+// as lag. Off by default: it is a promise that an answer is coming, and it is
+// only honest when replies are actually going out.
+const TYPING_INDICATOR = (process.env.TYPING_INDICATOR || "false").toLowerCase() === "true";
+const STATE_TTL = 30000;
 const ALLOW_GROUPS = (process.env.ALLOW_GROUPS || "false").toLowerCase() === "true";
 const ALLOWED_CONTACTS = (process.env.ALLOWED_CONTACTS || "")
   .split(",")
@@ -169,6 +175,41 @@ client.on("message_create", async (msg) => {
   }
 });
 
+// Whether replies are flowing right now (auto-reply on, not quiet hours).
+// Cached briefly: it is asked once per incoming message and changes rarely.
+let agentState = { sending: false, at: 0 };
+async function repliesAreFlowing() {
+  if (Date.now() - agentState.at < STATE_TTL) return agentState.sending;
+  try {
+    const { data } = await axios.get(STATE_URL, {
+      timeout: 4000,
+      headers: { "x-bridge-token": process.env.BRIDGE_API_TOKEN || "" },
+    });
+    agentState = { sending: Boolean(data.auto_reply), at: Date.now() };
+  } catch {
+    agentState = { sending: false, at: Date.now() };   // unsure means stay quiet
+  }
+  return agentState.sending;
+}
+
+// WhatsApp clears "typing…" after about 25 s and a reply can take longer, so
+// it is refreshed until the answer is ready. Entirely cosmetic: every failure
+// here is swallowed, because none of it is worth losing a reply over.
+async function showTyping(msg) {
+  if (!TYPING_INDICATOR || !(await repliesAreFlowing())) return null;
+  try {
+    const chat = await msg.getChat();
+    await chat.sendStateTyping();
+    const refresh = setInterval(() => { chat.sendStateTyping().catch(() => {}); }, 20000);
+    return () => {
+      clearInterval(refresh);
+      chat.clearState().catch(() => {});
+    };
+  } catch {
+    return null;
+  }
+}
+
 client.on("message", async (msg) => {
   try {
     if (msg.fromMe) {
@@ -197,6 +238,8 @@ client.on("message", async (msg) => {
 
       console.log(`[DEBUG] ${anon(msg.from)} type=${msg.type} hasMedia=${msg.hasMedia}`);
 
+      const stopTyping = await showTyping(msg);
+
       if (msg.hasMedia && (msg.type === "ptt" || msg.type === "audio" || msg.type === "image")) {
         try {
           const media = await msg.downloadMedia();
@@ -211,10 +254,15 @@ client.on("message", async (msg) => {
         }
       }
 
-      const { data } = await axios.post(BACKEND_URL, payload, {
-        timeout: 180000,
-        headers: { "x-bridge-token": process.env.BRIDGE_API_TOKEN || "" },
-      });
+      let data;
+      try {
+        ({ data } = await axios.post(BACKEND_URL, payload, {
+          timeout: 180000,
+          headers: { "x-bridge-token": process.env.BRIDGE_API_TOKEN || "" },
+        }));
+      } finally {
+        if (stopTyping) stopTyping();   // never leave them watching "typing…" forever
+      }
 
       if (data.action === "send") {
         if (data.reply_audio_base64) {

@@ -54,7 +54,11 @@
                box-shadow:0 6px 16px color-mix(in srgb,var(--c) 40%,transparent)}
   .tabs button[aria-selected="true"] svg{color:#fff}
   #tab-held{--c:var(--a5)} #tab-messages{--c:var(--a4)} #tab-activity{--c:var(--a2)} #tab-people{--c:var(--a3)}
-  #tab-whatsapp{--c:var(--ok)}
+  #tab-whatsapp{--c:var(--ok)} #tab-notes{--c:var(--a5)}
+  .noteh{margin:18px 0 4px;font-size:1.02rem}
+  .noteh:first-child{margin-top:0}
+  #notesPanel textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92rem}
+  #notesPanel code{background:var(--card2);border:1px solid var(--line);border-radius:6px;padding:0 4px;font-size:.86rem}
   .badge{padding:1px 7px;border-radius:999px;background:linear-gradient(135deg,var(--a5),var(--bad));color:#fff;font-size:.75rem}
   @media (max-width:560px){.tabs .lbl{display:none}.tabs [aria-selected="true"] .lbl{display:inline}}
 
@@ -81,6 +85,8 @@
   .wa-when{color:var(--mute);font-size:.76rem;white-space:nowrap}
   .wa-kind{display:block;font-size:.78rem;font-weight:700;opacity:.8;margin-bottom:2px}
   .msg time{display:block;margin-top:4px;font-size:.72rem;opacity:.62}
+  .wa-draft{margin-top:12px;border-inline-start:4px solid var(--a5);background:color-mix(in srgb,var(--a5) 8%,var(--card))}
+  .wa-draft .wa-kind{color:var(--a5)}
   .filters .note{flex:1;min-width:140px;font-size:.88rem}
 
   /* chat */
@@ -118,6 +124,7 @@
   .go{border:0;background:var(--grad);color:#fff;padding:10px 20px;border-radius:13px;font-weight:700;box-shadow:0 8px 18px color-mix(in srgb,var(--a2) 32%,transparent)}
   .ghost{border:1px solid var(--line);background:transparent;padding:10px 16px;border-radius:13px;font-weight:600}
   .from{color:var(--mute);font-size:.88rem;white-space:pre-wrap}
+  .why{font-style:italic;opacity:.85}
   .who{font-weight:800;color:hsl(var(--h,220) 62% 42%)}
   @media (prefers-color-scheme:dark){.who{color:hsl(var(--h,220) 85% 74%)}}
   textarea{width:100%;margin-top:8px;padding:10px;font:inherit;color:var(--ink);background:var(--card2);border:1px solid var(--line);border-radius:13px;resize:vertical}
@@ -225,6 +232,7 @@
     <button id="tab-held" data-tab="held" role="tab" aria-selected="false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="lbl">Held</span><span id="heldCount" class="badge" hidden></span></button>
     <button id="tab-messages" data-tab="messages" role="tab" aria-selected="false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg><span class="lbl">Messages</span></button>
     <button id="tab-activity" data-tab="activity" role="tab" aria-selected="false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span class="lbl">Activity</span></button>
+    <button id="tab-notes" data-tab="notes" role="tab" aria-selected="false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h10l4 4v14H5z"/><path d="M15 3v4h4M9 12h6M9 16h6"/></svg><span class="lbl">Notes</span></button>
     <button id="tab-people" data-tab="people" role="tab" aria-selected="false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14.2a6.5 6.5 0 0 1 3.5 5.8"/></svg><span class="lbl">Contacts</span></button>
   </nav>
 
@@ -281,6 +289,26 @@
   </section>
 
   <section id="view-activity" class="view" hidden><div id="activityList" class="panel"></div></section>
+  <section id="view-notes" class="view" hidden>
+    <div id="notesPanel" class="panel">
+      <h2 class="noteh">About you</h2>
+      <p class="note">The only facts the assistant is allowed to state. Anything missing here, it
+        says it isn't sure about instead of guessing — so an empty section is safe, not broken.
+        Keep the three <code>##</code> headings; they are read by name.</p>
+      <textarea id="noteAbout" rows="16" spellcheck="true" aria-label="About you"></textarea>
+      <div class="row"><button id="saveAbout" class="go" type="button">Save</button>
+        <span id="aboutState" class="note" role="status"></span></div>
+
+      <h2 class="noteh">How you text</h2>
+      <p class="note">Real lines you have actually sent, one per <code>-</code> bullet. This is the
+        only thing teaching it your voice, so copy them out of your own chats rather than writing
+        new ones.</p>
+      <textarea id="noteStyle" rows="12" spellcheck="true" aria-label="How you text"></textarea>
+      <div class="row"><button id="saveStyle" class="go" type="button">Save</button>
+        <span id="styleState" class="note" role="status"></span></div>
+    </div>
+  </section>
+
   <section id="view-people" class="view" hidden>
     <div class="filters">
       <button id="syncContacts" class="ghost" type="button">Sync from WhatsApp</button>
@@ -393,7 +421,7 @@
   fetch("/api/session").then((r) => (r.ok ? showApp() : showGate())).catch(showGate);
 
   // ---- tabs ----
-  const VIEWS = ["chat", "whatsapp", "held", "messages", "activity", "people"];
+  const VIEWS = ["chat", "whatsapp", "held", "messages", "activity", "notes", "people"];
   // On a wide screen these two are shown together, which is the whole point of
   // the WhatsApp pane: your conversations next to the assistant reading them.
   const PAIRED = ["chat", "whatsapp"];
@@ -415,6 +443,7 @@
     if (name === "messages") loadMessages();
     if (name === "activity") loadActivity();
     if (name === "people") loadPeople();
+    if (name === "notes") loadNotes();
     if (!$("view-whatsapp").hidden) loadWa(true);
   }
   document.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => show(b.dataset.tab)));
@@ -826,6 +855,7 @@
     empty_reply: "The model gave no usable answer",
     paused: "Auto-reply was paused",
     contact_mode: "This contact is set to always ask you first",
+    quiet_hours: "Quiet hours — written, but not sent at this time of night",
   };
   const heldList = $("heldList");
 
@@ -841,6 +871,13 @@
     const info = el("div", "mbody");
     info.append(incoming);
     if (item.reason) info.append(el("div", "from", `Why held: ${REASONS[item.reason] || item.reason}`));
+    // The model's own account of its reasoning, which is often more use than
+    // the category above — it says what specifically it was unsure of.
+    if (item.why) {
+      const why = el("div", "from why", `“${item.why}”`);
+      why.dir = "auto";
+      info.append(why);
+    }
     const top = el("div", "hhead");
     top.append(avatar(item.name || item.from), info);
     card.append(top, edit, row);
@@ -946,6 +983,35 @@
     }
   };
 
+  // ---- your notes: the only thing the assistant knows about you ----
+  // Both files live on the server's volume, so this is the only way to edit
+  // them without shell access. A save takes effect on the very next message.
+  const NOTE_FIELDS = { about_me: ["noteAbout", "aboutState", "saveAbout"],
+                        style: ["noteStyle", "styleState", "saveStyle"] };
+
+  async function loadNotes() {
+    try {
+      const { notes } = await api("/api/notes");
+      for (const [name, [box, state]] of Object.entries(NOTE_FIELDS)) {
+        if (document.activeElement !== $(box)) $(box).value = notes[name] || "";
+        $(state).textContent = "";
+      }
+    } catch (err) { $("aboutState").textContent = err.message; }
+  }
+
+  for (const [name, [box, state, button]] of Object.entries(NOTE_FIELDS)) {
+    $(button).onclick = async () => {
+      $(button).disabled = true;
+      $(state).textContent = "Saving…";
+      try {
+        const r = await api("/api/notes", { name, text: $(box).value });
+        $(state).textContent = `Saved — ${r.chars} characters. She uses it from the next message.`;
+      } catch (err) {
+        $(state).textContent = err.message;
+      } finally { $(button).disabled = false; }
+    };
+  }
+
   // ---- your own WhatsApp: read the threads, answer as yourself ----
   // The bridge only reads: nothing here is stored, and opening a thread sends
   // no read receipt, so looking at a message does not tell the sender you did.
@@ -1011,6 +1077,23 @@
     } catch (err) { $("waPanel").replaceChildren(note(err.message)); }
   }
 
+  async function showDraftFor(chatId) {
+    if (!waChat || chatId !== waChat) return;
+    try {
+      const { items } = await api("/api/held");
+      const mine = items.filter((i) => i.chat_id === waChat);
+      const panel = $("waPanel");
+      panel.querySelectorAll(".wa-draft").forEach((n) => n.remove());
+      for (const item of mine) {
+        const card = heldCard(item);
+        card.classList.add("wa-draft");
+        card.prepend(el("div", "wa-kind", "Waiting for you"));
+        panel.append(card);
+      }
+      if (mine.length) panel.scrollTop = panel.scrollHeight;
+    } catch { /* the Held tab still has it; this is the convenience copy */ }
+  }
+
   async function loadWaThread(toBottom) {
     if (!waChat) return;
     const panel = $("waPanel");
@@ -1026,6 +1109,7 @@
       $("waReply").hidden = chat.is_group;
       if (chat.is_group) panel.append(note("Replying to groups from here is switched off."));
       panel.scrollTop = toBottom || wasAtBottom ? panel.scrollHeight : keep;
+      showDraftFor(waChat);
     } catch (err) { panel.replaceChildren(note(err.message)); }
   }
 
@@ -1077,10 +1161,16 @@
   function startWaStream() {
     if (waStream || app.hidden) return;
     waStream = new EventSource("/api/wa/stream");
-    waStream.addEventListener("activity", (e) => {
-      let chatId = "";
-      try { chatId = JSON.parse(e.data).chat_id; } catch { /* a malformed line is not worth a crash */ }
-      waActivity(chatId);
+    const chatOf = (e) => {
+      try { return JSON.parse(e.data).chat_id || ""; } catch { return ""; }  // a malformed line is not worth a crash
+    };
+    waStream.addEventListener("activity", (e) => waActivity(chatOf(e)));
+    // A draft is worth acting on now, so it skips the coalescing: the Held
+    // badge updates wherever you are, and the card appears under the
+    // conversation if that is what you are looking at.
+    waStream.addEventListener("draft", (e) => {
+      refreshHeld();
+      showDraftFor(chatOf(e));
     });
     // EventSource reconnects on its own; this is for the case where it cannot,
     // so the page is not left silently stale.

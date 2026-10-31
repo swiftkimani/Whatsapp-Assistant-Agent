@@ -12,7 +12,7 @@ instead of OpenAI.
 | Bridge deps | ✅ | installed with `PUPPETEER_SKIP_DOWNLOAD=true`, uses system Chrome |
 | Claude port | ✅ | `llm.py`, `assistant.py`, `tts.py` |
 | Backend boots | ✅ | `/health` 200, `/dashboard` 200, auth gates 401 |
-| Test suite | ✅ | 119 pytest + 35 `node --test` pass, 0 fail |
+| Test suite | ✅ | 148 pytest + 35 `node --test` pass, 0 fail |
 | Live model call | ✅ | real key in `.env`; replies, Arianna's tools and the blank-input guard all verified live |
 | Eval set run | ✅ | 27/32, **0 unsafe sends**; the 5 misses are the empty notes, see below |
 | WhatsApp linked | ⬜ | ready; needs `ALLOWED_CONTACTS` and one QR scan |
@@ -242,6 +242,43 @@ Bug found and fixed while verifying in a real browser: the `.pair` wrapper kept
 its flex share of the height even with both panes hidden, so Held, Messages,
 Activity and Contacts were squashed into the bottom half. `show()` now hides
 the wrapper itself.
+
+## Done — making auto-reply worth turning on (2026-10-31)
+The gates all worked; what was missing was anything to reply *with*.
+
+- **The notes finally reachable.** `data/` is gitignored and the Dockerfile
+  never copied it, so on the server `about_me.md` and `style_examples.md` did
+  not exist and the prompt had no facts, no schedule, no redirect rules and no
+  voice. A **Notes** tab now reads and writes both through `/api/notes`, saved
+  temp-then-rename onto the volume. The prompt was assembled at *import* time,
+  so this also needed `llm.system_prompt()`: rebuilt only when either file's
+  mtime or size changes, which keeps the text stable between messages so the
+  prompt cache still hits. `assistant.py` calls `_load_style_examples()` now
+  rather than capturing it, so Arianna's own voice follows the same edit.
+- **History that predates us.** Memory only ever held what the agent itself had
+  seen, so a friend of ten years and a stranger looked identical on the first
+  message. `memory.seed_from_whatsapp()` pulls the real thread through the
+  bridge once, when nothing is stored. Best effort: a bridge that is down costs
+  context, never the reply. `HISTORY_TURNS` (12) is now configurable, capped
+  at 50 so one contact cannot blow up the prompt.
+- **It says why.** `why` was added to `ANSWER_SCHEMA` and stored on the held
+  row: one line, to the owner, about what it was unsure of. Far more use than
+  the category — "needs_owner" does not tell you *what* needed you. Optional in
+  the parser and clipped to 200 chars, so an old or over-long answer still
+  parses. Adaptive thinking was already on and cannot be disabled on this model
+  family; what was missing was any of it reaching the owner.
+- **Quiet hours** (`QUIET_HOURS=22:00-07:00`): the draft is still written and
+  still queued, only sending waits. A misspelt window means "not quiet" — the
+  alternative is a typo silently holding every reply.
+- **"typing…"** while the model works, gated on `GET /agent-state` so it is
+  never shown when replies are being held. Showing it with auto-reply off would
+  promise an answer that never comes. Off by default.
+- **Drafts come to you.** `live.publish()` notices gained a kind, and a held
+  reply now publishes `draft`, so the card appears under the conversation in
+  the WhatsApp pane with Send / edit / Dismiss — verified in a browser.
+
+`app/bridge.py` was extracted along the way: the dashboard and the agent both
+needed the bridge, from async and sync code respectively.
 
 ## Decisions
 - Model defaults to `claude-opus-5-5`, effort `medium`, both overridable via
