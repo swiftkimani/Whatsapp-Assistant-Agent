@@ -1,5 +1,5 @@
 # CONTEXT — WhatsApp Assistant Agent
-_Last updated: 2026-10-30_
+_Last updated: 2026-10-31_
 
 ## Current goal
 Get the system running on this machine, with replies coming from the Claude API
@@ -12,7 +12,7 @@ instead of OpenAI.
 | Bridge deps | ✅ | installed with `PUPPETEER_SKIP_DOWNLOAD=true`, uses system Chrome |
 | Claude port | ✅ | `llm.py`, `assistant.py`, `tts.py` |
 | Backend boots | ✅ | `/health` 200, `/dashboard` 200, auth gates 401 |
-| Test suite | ✅ | 84 pass, 0 fail |
+| Test suite | ✅ | 93 pytest + 22 `node --test` pass, 0 fail |
 | Live model call | ✅ | real key in `.env`; replies, Arianna's tools and the blank-input guard all verified live |
 | Eval set run | ✅ | 27/32, **0 unsafe sends**; the 5 misses are the empty notes, see below |
 | WhatsApp linked | ⬜ | ready; needs `ALLOWED_CONTACTS` and one QR scan |
@@ -55,7 +55,8 @@ instead of OpenAI.
    `auto_reply` off nothing is sent, but their messages are still stored and
    sent to the API, so this is a privacy setting as much as a safety one.
 2. Fill `data/kb/about_me.md` and `data/style_examples.md` (see
-   `data/kb/FILL_THIS_IN.md`), and put real names in `contacts.json`.
+   `data/kb/FILL_THIS_IN.md`). `contacts.json` is now populated by the
+   dashboard's **Sync from WhatsApp** button rather than by hand.
 3. `./scripts/dev.sh` and scan the QR code once.
 4. Watch the held queue for a while, then turn `auto_reply` back on from the
    dashboard when the drafts look right.
@@ -169,6 +170,40 @@ Also fixed here: the bridge was logging senders' phone numbers and message text
 never did. It mattered little on a laptop and matters on a host that keeps
 logs, especially for senders who are not on the allowlist.
 
+## Done — contact sync (2026-10-31)
+`contacts.json` was hand-written and, on the server, absent — so the dashboard
+had nobody it was allowed to message. **Sync from WhatsApp** on the Contacts
+tab now copies the phone's own address book into it:
+
+    dashboard button -> POST /api/contacts/sync -> bridge POST /sync-contacts
+    -> client.getContacts() -> mergeContacts() -> contacts.json (shared volume)
+
+Only the bridge can read the address book, because it is the process holding
+the WhatsApp session. The rules live in `whatsapp-bridge/contacts_sync.js`,
+away from the client and the filesystem, with 12 tests:
+
+- **Adds only.** An entry already in the file is never renamed, repointed or
+  removed. `contacts.json` is the list the dashboard may send *to*, so a sync
+  can only ever widen it, and only when asked — never on a timer.
+- **Saved contacts only** (`isMyContact`, not blocked, not a group, not self).
+  Without that filter every stranger who ever messaged the account becomes
+  someone the dashboard may message back.
+- **One person, one entry.** A number already in the file under a name the
+  owner chose ("Mom") is not added again as "Jane Doe", matched on the last 9
+  digits so `254712345678` and `0712345678` count as the same line.
+- A contact with no phone number keeps its `@lid` privacy id, which is a valid
+  recipient; a nameless one is skipped rather than named after its own number;
+  two people under one name are disambiguated by last-4-digits.
+- `CONTACTS_SYNC_LIMIT` (500) bounds one sync. Written temp-then-rename, so an
+  interrupted sync cannot leave a truncated recipient list.
+- Counts in the logs, never a name or a number — the address book belongs in
+  the file and on the owner's screen, not in the host's logs.
+
+Verified by driving the real route against a stub client: a manual "Mom" entry
+survived a sync that had her under her WhatsApp name, a non-contact was
+skipped, an `@lid` contact came through, a second sync produced an identical
+file, and an untokened request got 401.
+
 ## Decisions
 - Model defaults to `claude-opus-5-5`, effort `medium`, both overridable via
   `ANTHROPIC_MODEL` / `ANTHROPIC_EFFORT` so the eval set can be used to tune
@@ -236,6 +271,13 @@ per-contact modes — has to be set again per deployment.
   pre-port baseline (2026-10-04, 3 runs/case) scored 31/32 with **one unsafe
   send**; this run had none. Re-run after filling the notes.
 - `pytest 9.2.0` is newer than anything this repo was tested on.
+- A large address book makes a long Contacts tab and a long contact filter in
+  Messages: both are flat lists with no search. `CONTACTS_SYNC_LIMIT` keeps it
+  bounded; a search box is the fix if it starts to grate.
+- Contact sync never *removes*. Someone deleted from the phone stays a valid
+  recipient until the entry is deleted from `contacts.json` by hand. That is
+  deliberate — a sync that could delete could also delete a name typed in by
+  hand — but it means the file drifts.
 
 ## How to run right now
 Live at **https://arie.benardkimani.co.ke/dashboard** (the bare domain 404s —

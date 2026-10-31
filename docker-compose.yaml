@@ -77,6 +77,9 @@ services:
       ALLOWED_CONTACTS: ${ALLOWED_CONTACTS:?}
       ALLOW_GROUPS: ${ALLOW_GROUPS:-false}
       CONTACTS_FILE: /app/data/contacts.json
+      # Most contacts one "Sync from WhatsApp" may add. That file is the list
+      # the dashboard may message, so a sync widens it; this bounds how far.
+      CONTACTS_SYNC_LIMIT: ${CONTACTS_SYNC_LIMIT:-500}
       # Set to link by typed code rather than by scanning a QR off a log viewer.
       PAIRING_NUMBER: ${PAIRING_NUMBER:-}
       # Bump when linking starts failing: WhatsApp refuses new device links on

@@ -6,20 +6,40 @@ const fs = require("fs");
 const http = require("http");
 const path = require("path");
 const { Location } = require("whatsapp-web.js");
+const { mergeContacts, DEFAULT_LIMIT } = require("./contacts_sync");
 
 // Project root by default; CONTACTS_FILE moves it so the backend and the bridge
 // can share one copy when they run as separate containers.
 const CONTACTS_FILE = process.env.CONTACTS_FILE
   || path.resolve(__dirname, "..", "contacts.json");
-const ROUTES = ["/send-text", "/send-location", "/send-reply"];
+const ROUTES = ["/send-text", "/send-location", "/send-reply", "/sync-contacts"];
 let started = false; // "ready" can fire again after a reconnect
 
 // Re-read on every request so edits to contacts.json apply without a restart.
+function readContacts() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(CONTACTS_FILE, "utf-8"));
+    return Object.fromEntries(Object.entries(raw).map(([k, v]) => [String(k), String(v)]));
+  } catch {
+    return {};   // missing or hand-edited into invalid JSON: treat as empty
+  }
+}
+
+// Written via a temporary file in the same directory and renamed over the old
+// one, so a sync interrupted halfway cannot leave a truncated recipient list
+// behind — a half-written file is an unparseable one, and the assistant would
+// then have nobody it is allowed to message.
+function writeContacts(contacts) {
+  const tmp = `${CONTACTS_FILE}.${process.pid}.tmp`;
+  fs.mkdirSync(path.dirname(CONTACTS_FILE), { recursive: true });
+  fs.writeFileSync(tmp, `${JSON.stringify(contacts, null, 2)}\n`, "utf-8");
+  fs.renameSync(tmp, CONTACTS_FILE);
+}
+
 function findEntry(name) {
-  const raw = JSON.parse(fs.readFileSync(CONTACTS_FILE, "utf-8"));
   const wanted = String(name || "").trim().toLowerCase();
-  for (const [key, value] of Object.entries(raw)) {
-    if (key.trim().toLowerCase() === wanted) return String(value).trim();
+  for (const [key, value] of Object.entries(readContacts())) {
+    if (key.trim().toLowerCase() === wanted) return value.trim();
   }
   return null;
 }
@@ -51,7 +71,7 @@ function startBridgeApi(client) {
     });
     req.on("end", async () => {
       try {
-        const data = JSON.parse(body);
+        const data = body ? JSON.parse(body) : {};   // /sync-contacts needs no body
 
         if (req.url === "/send-reply") {
           // Reply to someone who messaged us. The backend takes chat_id from its own
@@ -63,6 +83,26 @@ function startBridgeApi(client) {
           await client.sendMessage(chatId, text);
           console.log("[send] /send-reply");
           return reply(200, { status: "sent" });
+        }
+
+        if (req.url === "/sync-contacts") {
+          // Copy the phone's own address book into contacts.json. Only ever
+          // adds: see contacts_sync.js for what is skipped and why.
+          const limit = Number(process.env.CONTACTS_SYNC_LIMIT || DEFAULT_LIMIT);
+          const before = readContacts();
+          const result = mergeContacts(await client.getContacts(), before, { limit });
+          if (result.added.length) writeContacts(result.contacts);
+          // Counts only: a name or a number here would put the owner's address
+          // book in the host's logs.
+          console.log(`[sync] contacts added=${result.added.length} kept=${result.kept} `
+            + Object.entries(result.skipped).map(([k, v]) => `${k}=${v}`).join(" "));
+          return reply(200, {
+            status: "ok",
+            added: result.added.length,
+            names: result.added,
+            total: Object.keys(result.contacts).length,
+            skipped: result.skipped,
+          });
         }
 
         const entry = findEntry(data.contact);
@@ -98,8 +138,8 @@ function startBridgeApi(client) {
         console.log(`[send] ${req.url} -> "${data.contact}"`); // no message text or coordinates in logs
         reply(200, { status: "sent" });
       } catch (err) {
-        console.error("send failed:", err.stack || err);
-        reply(500, { error: "send failed" });
+        console.error(`${req.url} failed:`, err.stack || err);
+        reply(500, { error: "request failed" });
       }
     });
   });

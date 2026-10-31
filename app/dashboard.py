@@ -47,6 +47,7 @@ MAX_AUDIO_BYTES = 10 * 1024 * 1024
 # asking for a pin and confirming it, short enough that nobody is sent a place
 # you have already left.
 PHONE_FIX_MAX_AGE = 300  # seconds
+SYNC_COOLDOWN = 60       # seconds between contact syncs
 
 _last_send: dict[str, float] = {}
 _failed_logins: dict[str, list[float]] = {}
@@ -230,17 +231,13 @@ def _phone_fix() -> dict | None:
     return fix
 
 
-async def _send(kind: str, path: str, payload: dict, cooldown: float) -> dict:
-    known = {n.strip().lower() for n in _contact_names()}
-    if payload["contact"].strip().lower() not in known:
-        raise HTTPException(400, "Unknown contact. Add the name to contacts.json.")
-    if time.time() - _last_send.get(kind, 0.0) < cooldown:
-        raise HTTPException(429, "Just sent one. Wait a few seconds.")
-
+async def _bridge_post(path: str, payload: dict, timeout: float) -> httpx.Response:
+    """One POST to the bridge's local API. The bridge holds the WhatsApp
+    session, so anything that needs WhatsApp itself goes through here."""
     bridge_url = os.getenv("BRIDGE_API_URL", "http://127.0.0.1:3001")
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.post(
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            return await client.post(
                 f"{bridge_url}{path}",
                 json=payload,
                 headers={"x-bridge-token": os.getenv("BRIDGE_API_TOKEN", "")},
@@ -248,6 +245,15 @@ async def _send(kind: str, path: str, payload: dict, cooldown: float) -> dict:
     except httpx.HTTPError:
         raise HTTPException(502, "Can't reach the WhatsApp bridge. Is it running?")
 
+
+async def _send(kind: str, path: str, payload: dict, cooldown: float) -> dict:
+    known = {n.strip().lower() for n in _contact_names()}
+    if payload["contact"].strip().lower() not in known:
+        raise HTTPException(400, "Unknown contact. Add the name to contacts.json.")
+    if time.time() - _last_send.get(kind, 0.0) < cooldown:
+        raise HTTPException(429, "Just sent one. Wait a few seconds.")
+
+    r = await _bridge_post(path, payload, timeout=30)
     if r.status_code != 200:
         raise HTTPException(502, f"The bridge could not send it ({r.status_code}): {r.text[:120]}")
 
@@ -269,6 +275,31 @@ async def dashboard():
 @router.get("/api/contacts", dependencies=[Depends(require_auth)])
 async def contacts():
     return {"contacts": _contact_names()}
+
+
+@router.post("/api/contacts/sync", dependencies=[Depends(require_auth)])
+async def sync_contacts():
+    """Copy the phone's own address book into contacts.json.
+
+    Only the bridge can read it — it is the process holding the WhatsApp
+    session — and it only ever adds: a name already in the file is never
+    renamed, repointed or removed. Widening the file widens who the dashboard
+    may message, so this happens when you ask for it, never on a timer.
+    """
+    if time.time() - _last_send.get("sync", 0.0) < SYNC_COOLDOWN:
+        raise HTTPException(429, "Just synced. Give it a minute.")
+    # Reading the address book drives the browser session, which takes
+    # noticeably longer than sending one message.
+    r = await _bridge_post("/sync-contacts", {}, timeout=120)
+    if r.status_code != 200:
+        raise HTTPException(502, f"The bridge could not read your contacts ({r.status_code}): {r.text[:120]}")
+
+    _last_send["sync"] = time.time()
+    data = r.json()
+    # Counts only: the names belong in the file and on your screen, not in the
+    # host's logs.
+    log_event("contacts_synced", added=data.get("added"), total=data.get("total"))
+    return data
 
 
 @router.post("/api/send-text", dependencies=[Depends(require_auth)])

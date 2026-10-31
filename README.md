@@ -162,7 +162,12 @@ cp .env.example .env            # then fill in ANTHROPIC_API_KEY and ALLOWED_CON
                                 # and generate DASHBOARD_PASSWORD + BRIDGE_API_TOKEN
 ```
 
-1. **`contacts.json`** (project root) maps a name to a phone number or chat id: `{"Mom": "201012345678"}`.
+1. **`contacts.json`** (project root) maps a name to a phone number or chat id: `{"Mom": "254712345678"}`.
+   Write it by hand, or press **Sync from WhatsApp** on the dashboard's Contacts tab to copy your phone's
+   address book into it. A sync only ever *adds*: a name you chose yourself is never renamed or repointed,
+   and somebody already in the file is not added again under the name WhatsApp holds for them. It reads
+   saved contacts only — not every stranger who has messaged you — and never removes anyone, so taking
+   someone out is still a manual edit.
 2. **`data/kb/about_me.md`**: your facts. Keep the sections `## Schedule` and
    `## Things to redirect rather than answer directly`; the assistant uses them literally.
    It ships with the headings and nothing under them, because everything in it is given to the
@@ -196,6 +201,7 @@ Copy `.env.example` and set at least the **bold** values.
 | **`BRIDGE_API_TOKEN`** | Shared secret between bridge and backend (both directions) |
 | `BRIDGE_API_URL`, `BRIDGE_API_PORT`, `BACKEND_URL` | Where the two programs find each other |
 | **`ALLOWED_CONTACTS`** | Comma-separated phone numbers that get answered. Empty means everyone, so set it before going live |
+| `CONTACTS_SYNC_LIMIT` | Most contacts one sync may add to `contacts.json` (default 500) |
 | `ALLOW_GROUPS` | Answer group chats (default `false`) |
 | `WHISPER_MODEL_SIZE`, `DASHBOARD_WHISPER_SIZE` | Model size for voice notes and for dashboard dictation |
 | `TTS_PROVIDER` | `edge` (free) or `openai` (an instructable, more Kenyan-sounding voice, paid per use) |
@@ -266,7 +272,9 @@ app/
   stt.py, tts.py, vision.py, lang.py   Whisper, voices, BLIP, language choice
   style_retrieval.py, export_parser.py  tone retrieval from past chats
   contacts.py, log.py                   contacts.json lookup, structured logging
-whatsapp-bridge/     index.js (WhatsApp connection), bridge_api.js (local send API)
+whatsapp-bridge/     index.js (WhatsApp connection), bridge_api.js (local send API),
+                     allowlist.js (who may reach the assistant), contacts_sync.js (address book -> contacts.json),
+                     *.test.js (node --test)
 tests/               pytest suite
 evals/               evaluation cases and runner
 data/                kb/about_me.md, style_examples.md, database and logs (not committed)
