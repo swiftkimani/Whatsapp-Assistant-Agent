@@ -1,5 +1,5 @@
 # CONTEXT — WhatsApp Assistant Agent
-_Last updated: 2026-10-31_
+_Last updated: 2026-11-01_
 
 ## Current goal
 Get the system running on this machine, with replies coming from the Claude API
@@ -12,12 +12,13 @@ instead of OpenAI.
 | Bridge deps | ✅ | installed with `PUPPETEER_SKIP_DOWNLOAD=true`, uses system Chrome |
 | Claude port | ✅ | `llm.py`, `assistant.py`, `tts.py` |
 | Backend boots | ✅ | `/health` 200, `/dashboard` 200, auth gates 401 |
-| Test suite | ✅ | 148 pytest + 35 `node --test` pass, 0 fail |
+| Test suite | ✅ | 175 pytest + 41 `node --test` pass, 0 fail |
 | Live model call | ✅ | real key in `.env`; replies, Arianna's tools and the blank-input guard all verified live |
 | Eval set run | ✅ | 27/32, **0 unsafe sends**; the 5 misses are the empty notes, see below |
-| WhatsApp linked | ⬜ | ready; needs `ALLOWED_CONTACTS` and one QR scan |
 | Deploy (Coolify) | ✅ | live at https://arie.benardkimani.co.ke/dashboard, Let's Encrypt |
 | WhatsApp linked | ✅ | linked on the server; survives redeploys with no QR |
+| Who gets answered | ✅ | `ALLOWED_CONTACTS=contacts`; per-contact modes on the dashboard |
+| Replies going out | ⬜ | **the notes are still empty — this is the one blocker** |
 
 ## Done
 - Ported replies and Arianna from OpenAI to the Claude Messages API:
@@ -51,21 +52,25 @@ instead of OpenAI.
   repo deliberately in 875f8b1.
 
 ## Next (ordered)
-1. Set `ALLOWED_CONTACTS=contacts` so the address book is the allowlist.
-   **Empty means every sender is processed**, and a list of hand-typed numbers
-   goes stale the moment contacts are synced. With `auto_reply` off nothing is
-   sent, but messages are still stored and sent to the API, so this is a
-   privacy setting as much as a safety one.
-2. Fill `data/kb/about_me.md` and `data/style_examples.md` (see
-   `data/kb/FILL_THIS_IN.md`). `contacts.json` is now populated by the
-   dashboard's **Sync from WhatsApp** button rather than by hand.
-3. `./scripts/dev.sh` and scan the QR code once.
-4. Watch the held queue for a while, then turn `auto_reply` back on from the
-   dashboard when the drafts look right.
+All of these are the owner's to do, on the live dashboard, and nothing useful
+happens until the first one is done.
+
+1. **Fill the Notes tab** — About you, Schedule, Things to redirect. Everything
+   in it is given to the model as true, so it is left empty rather than
+   guessed; empty means the assistant can only deflect. This is why the eval
+   set's five misses are holds.
+2. Replace the placeholder lines in **style examples** with real messages, so
+   the voice is the owner's rather than an impression of it.
+3. Pick people on the **Contacts** tab. The default is "leave alone", so until
+   someone is set to "ask me first" or "reply automatically", nothing is
+   transcribed, stored or sent to a model.
+4. Watch the held queue for a while, then turn **auto-reply** on when the
+   drafts read right. Deliberately still paused.
 5. Re-run `python -m evals.run_eval` once the notes are filled — the five
    needless holds should turn into passes. Use `--runs 3` to match the
    pre-port baseline in git history.
-6. Decide what to do about `tests/test_phone_location.py` (below).
+6. Multi-tenancy: measure RAM for two stacks before anything else
+   (ADR-0001, proposed and not started).
 
 ## Done — deployment (2026-10-30)
 - Implemented the location feature `tests/test_phone_location.py` had always
@@ -135,8 +140,9 @@ Running on Contabo via Coolify: project `Arianna`, resource `arie`, domain
   in rather than photographed. Falls back to the QR if the request fails.
   Commit 1d76420.
 
-Note for the next person: the bare domain returns 404 by design — there is no
-route at `/`. The dashboard is at `/dashboard`.
+Note for the next person: the bare domain used to return 404, because there is
+no route at `/`. It now redirects to `/dashboard` (302) — see *Known issues*
+for why it is not a 301.
 
 ## Done — linking (2026-10-31)
 The account is linked and the server survives redeploys without a QR. Getting
@@ -418,9 +424,10 @@ per-contact modes — has to be set again per deployment.
   hand — but it means the file drifts.
 
 ## How to run right now
-Live at **https://arie.benardkimani.co.ke/dashboard** (the bare domain 404s —
-there is no route at `/`). Deployed by Coolify: project `Arianna`, resource
-`arie`, on Contabo. Redeploy from the Coolify UI; the session volume persists.
+Live at **https://arie.benardkimani.co.ke** — the bare domain redirects to
+`/dashboard`. Deployed by Coolify: project `Arianna`, resource `arie`, on
+Contabo. Redeploy from the Coolify UI; the session volume persists. Auto-deploy
+is off, so a push to `main` does not reach the server until you press it.
 
 
 ```bash
